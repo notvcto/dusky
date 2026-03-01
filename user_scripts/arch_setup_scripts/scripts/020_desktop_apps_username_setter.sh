@@ -68,6 +68,7 @@ readonly TARGET_FILES=(
     "dusky_power.desktop"
     "dusky_waybars.desktop"
     "dusky_window_rules.desktop"
+    "dusky_workspace_manager.desktop"
     "dusky_site_blocker.desktop"
     "dusky_sliders.desktop"
     "dusky_swaync_side.desktop"
