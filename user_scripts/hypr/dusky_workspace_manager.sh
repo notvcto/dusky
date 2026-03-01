@@ -64,16 +64,24 @@ register_items() {
     register 2 "1-Win Border"    '$smart_border|int||0|10|1' "0"
 }
 
-# Post-Write Hook (Applies changes to Hyprland instantly)
+# Post-Write Hook: Sets deferred reload flag (flushed when input goes idle)
 post_write_action() {
+    _NEEDS_RELOAD=1
+}
+
+# Deferred Reload: Applies changes to Hyprland in a single batch
+_flush_reload() {
+    if (( _NEEDS_RELOAD == 0 )); then return 0; fi
+    _NEEDS_RELOAD=0
+
     if command -v hyprctl &>/dev/null; then
         # 1. Always reload to apply base config changes & clear old IPC rules
         hyprctl reload >/dev/null 2>&1 || :
-        
+
         # 2. Extract the Ephemeral State directly from the active cache
         local eph_val="${CONFIG_CACHE['$ephemeral_enabled|']:-false}"
         local eph_layout="${CONFIG_CACHE['$ephemeral_layout|']:-dwindle}"
-        
+
         # 3. If Active, inject the global override directly into the IPC (Memory)
         if [[ "$eph_val" == "true" ]]; then
             hyprctl keyword workspace "r[1-99], layout:$eph_layout" >/dev/null 2>&1 || :
@@ -130,6 +138,9 @@ declare -i PARENT_SCROLL=0
 
 # Temp file global
 declare _TMPFILE=""
+
+# Deferred reload flag
+declare -i _NEEDS_RELOAD=0
 
 # --- Click Zones for Arrows ---
 declare LEFT_ARROW_ZONE=""
@@ -1129,6 +1140,16 @@ main() {
         draw_ui
         if ! IFS= read -rsn1 key; then continue; fi
         handle_input_router "$key"
+        # Deferred reload: when a value change is pending, drain all buffered
+        # keystrokes first (file writes are instant), then fire hyprctl reload
+        # exactly once. This prevents the blocking IPC call from causing stdin
+        # buffer buildup and the "drag" effect when holding a key.
+        if (( _NEEDS_RELOAD )); then
+            while IFS= read -rsn1 -t 0.005 key 2>/dev/null; do
+                handle_input_router "$key"
+            done
+            _flush_reload
+        fi
     done
 }
 
