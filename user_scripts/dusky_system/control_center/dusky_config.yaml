@@ -233,6 +233,81 @@ pages:
         terminal: false
   - type: section
     properties:
+      title: Dusky Updates
+      icon: ''
+      description: ''
+    items:
+    - type: navigation
+      properties:
+        title: System Updates & Logs
+        description: Update system and manage backups
+        icon: system-software-update-symbolic
+      layout:
+        - type: section
+          properties:
+            title: System Updates
+          items:
+          - type: button
+            properties:
+              title: Dusky Updater
+              description: Update Dusky specific configuration files
+              icon: system-software-update-symbolic
+              badge_file: ~/.config/dusky/settings/dusky_update_behind_commit
+              button_text_file: ~/.config/dusky/settings/dusky_update_behind_commit
+              button_text_map:
+                "0": "Updated"
+                "default": "Available"
+              style_map:
+                "0": "normal"
+                "default": "suggested"
+            on_press:
+              type: exec
+              command: kitty --class update_dusky.sh --title "System Updater" --hold sh -c "$HOME/user_scripts/update_dusky/update_dusky.sh"
+              terminal: false
+          - type: button
+            properties:
+              title: Arch Updater
+              description: Pacman and AUR packages update
+              icon: system-software-update-symbolic
+              button_text: "Update"
+            on_press:
+              type: exec
+              command: kitty --class arch_update --title "Arch Linux Updater" --hold sh -c "paru -Syu"
+              terminal: false
+
+        - type: section
+          properties:
+            title: Backups & Logs
+          items:
+          - type: button
+            properties:
+              title: View Backups
+              description: Browse ~/Documents/dusky_backups/
+              icon: folder-documents-symbolic
+              buttons:
+                - icon: utilities-terminal-symbolic
+                  button_text: "Yazi"
+                  on_press:
+                    type: exec
+                    command: kitty --class yazi --title "Backup Viewer" --hold sh -c "yazi $HOME/Documents/dusky_backups/"
+                - icon: system-file-manager-symbolic
+                  button_text: "nemo"
+                  style: suggested
+                  on_press:
+                    type: exec
+                    command: nemo "$HOME/Documents/dusky_backups/"
+          - type: button
+            properties:
+              title: Send Logs
+              description: Generate system logs and copy link to clipboard
+              icon: edit-copy-symbolic
+              button_text: "Send"
+            on_press:
+              type: exec
+              command: kitty --class send_logs.sh --hold sh -c "$HOME/user_scripts/arch_setup_scripts/send_logs.sh"
+              terminal: false
+  - type: section
+    properties:
       title: Session Management
       icon: system-users-symbolic
       description: Manage user session and login behavior
@@ -309,81 +384,6 @@ pages:
               command: kitty --class 310_reconnect_and_push_new_changes_to_github.sh --hold sh -c "$HOME/user_scripts/arch_setup_scripts/scripts/310_reconnect_and_push_new_changes_to_github.sh"
               terminal: false
 
-  - type: section
-    properties:
-      title: Dusky Updates
-      icon: ''
-      description: ''
-    items:
-    - type: navigation
-      properties:
-        title: System Updates & Logs
-        description: Update system and manage backups
-        icon: system-software-update-symbolic
-      layout:
-        - type: section
-          properties:
-            title: System Updates
-          items:
-          - type: button
-            properties:
-              title: Dusky Updater
-              description: Update Dusky specific configuration files
-              icon: system-software-update-symbolic
-              badge_file: ~/.config/dusky/settings/dusky_update_behind_commit
-              button_text_file: ~/.config/dusky/settings/dusky_update_behind_commit
-              button_text_map:
-                "0": "Updated"
-                "default": "Available"
-              style_map:
-                "0": "normal"
-                "default": "suggested"
-            on_press:
-              type: exec
-              command: kitty --class update_dusky.sh --title "System Updater" --hold sh -c "$HOME/user_scripts/update_dusky/update_dusky.sh"
-              terminal: false
-          - type: button
-            properties:
-              title: Arch Updater
-              description: Pacman and AUR packages update
-              icon: system-software-update-symbolic
-              button_text: "Update"
-            on_press:
-              type: exec
-              command: kitty --class arch_update --title "Arch Linux Updater" --hold sh -c "paru -Syu"
-              terminal: false
-
-        - type: section
-          properties:
-            title: Backups & Logs
-          items:
-          - type: button
-            properties:
-              title: View Backups
-              description: Browse ~/Documents/dusky_backups/
-              icon: folder-documents-symbolic
-              buttons:
-                - icon: utilities-terminal-symbolic
-                  button_text: "Yazi"
-                  on_press:
-                    type: exec
-                    command: kitty --class yazi --title "Backup Viewer" --hold sh -c "yazi $HOME/Documents/dusky_backups/"
-                - icon: system-file-manager-symbolic
-                  button_text: "nemo"
-                  style: suggested
-                  on_press:
-                    type: exec
-                    command: nemo "$HOME/Documents/dusky_backups/"
-          - type: button
-            properties:
-              title: Send Logs
-              description: Generate system logs and copy link to clipboard
-              icon: edit-copy-symbolic
-              button_text: "Send"
-            on_press:
-              type: exec
-              command: kitty --class send_logs.sh --hold sh -c "$HOME/user_scripts/arch_setup_scripts/send_logs.sh"
-              terminal: false
 
 - id: disk_and_files
   title: Disk & Files
