@@ -312,7 +312,7 @@ cfdisk /dev/sdX
 >
 > | # | Size | Type (cfdisk) | Purpose |
 > |---|---|---|---|
-> | 1 | `1G` | **EFI System** | ESP — unencrypted boot partition (UEFI) |
+> | 1 | `2-5 GB` | **EFI System** | ESP — unencrypted boot partition (UEFI) |
 > | 2 | *remainder* | **Linux filesystem** | LUKS2 encrypted root |
 >
 > Write and quit.
@@ -329,7 +329,7 @@ lsblk /dev/sdX
 
 ### 8. LUKS2 Encryption Setup
 
-> [!warning] **This will destroy all data on the root partition.** Double-check you are targeting the correct partition (the large one, **not** the 1G ESP).
+> [!warning] **This will destroy all data on the root partition.** Double-check you are targeting the correct partition (the large one, **not** the ~2GB ESP).
 
 *Format the root partition with LUKS2*
 
