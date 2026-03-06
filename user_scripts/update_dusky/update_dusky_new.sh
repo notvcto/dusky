@@ -52,8 +52,9 @@ declare -r BRANCH="main"
 # ==============================================================================
 # USER CONFIGURATION
 # ==============================================================================
+
 # ------------------------------------------------------------------------------
-# CUSTOM SCRIPT PATHS
+# CUSTOM SCRIPT PATHS Guide
 # ------------------------------------------------------------------------------
 # DO NOT REMOVE THESE COMMENTS, THESE ARE INSTRUCTIONS FOR ADDING SCRIPTS WITH CUSTOM PATH
 # Map specific scripts to custom paths relative to ${HOME}.
@@ -802,7 +803,7 @@ detect_git_lock_state() {
 }
 
 get_repo_state() {
-    local is_bare="" lock_state=""
+    local lock_state=""
 
     if [[ ! -e "$DOTFILES_GIT_DIR" ]]; then
         REPLY="absent"
@@ -850,13 +851,7 @@ get_repo_state() {
         lock_state="$next_lock_state"
     done
 
-    is_bare="$("${GIT_CMD[@]}" rev-parse --is-bare-repository 2>/dev/null || true)"
-    if [[ "$is_bare" != "true" ]]; then
-        log ERROR "Repository at $DOTFILES_GIT_DIR is not a bare repository"
-        REPLY="invalid"
-        return 0
-    fi
-
+    # Verify repo integrity by checking for valid git dir
     if ! "${GIT_CMD[@]}" rev-parse --git-dir >/dev/null 2>&1; then
         log ERROR "Repository metadata is invalid or corrupted: $DOTFILES_GIT_DIR"
         REPLY="invalid"
