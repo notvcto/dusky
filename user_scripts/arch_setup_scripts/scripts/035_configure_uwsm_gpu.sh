@@ -42,10 +42,14 @@ done
 check_deps() {
     local missing=()
     
-    # CRITICAL FIX: Prevent grep hang by using array to check existence first
+    # Check for PCI mapping tool
+    if ! command -v lspci &>/dev/null; then
+        missing+=("pciutils")
+    fi
+
     local vendor_files=(/sys/class/drm/card*/device/vendor)
     
-    # Check for NVIDIA specifics only if NVIDIA hardware exists
+    # Check for NVIDIA specifics only if hardware exists
     if (( ${#vendor_files[@]} > 0 )); then
         if grep -q "0x10de" "${vendor_files[@]}"; then
             if ! command -v nvidia-smi &>/dev/null; then
@@ -58,7 +62,6 @@ check_deps() {
         log_warn "Missing dependencies detected: ${missing[*]}"
         log_info "Attempting to install via pacman..."
         
-        # Sudo will handle the auth. If cached, it's instant.
         if sudo pacman -S --needed --noconfirm "${missing[@]}"; then
             log_ok "Dependencies installed successfully."
         else
@@ -76,6 +79,10 @@ INTEL_CARDS=()
 AMD_CARDS=()
 NVIDIA_CARDS=()
 
+# Bash 5+ Associative Arrays for Metadata Mapping
+declare -gA CARD_NAMES
+declare -gA CARD_PCI_PATHS
+
 detect_topology() {
     log_info "Scanning GPU Topology via Sysfs..."
     
@@ -85,10 +92,27 @@ detect_topology() {
         if [[ ! -r "$vendor_file" ]]; then continue; fi
         
         local vendor_id
-        vendor_id=$(cat "$vendor_file")
-        vendor_id=${vendor_id,,} # Lowercase
+        vendor_id=$(<"$vendor_file") # Faster Bash built-in read
+        vendor_id=${vendor_id,,}     # Lowercase
         
         local dev_node="/dev/dri/${card_path##*/}"
+        
+        # Resolve PCI Address from sysfs symlink
+        local sys_device_path
+        sys_device_path=$(readlink -f "$card_path/device")
+        local pci_address="${sys_device_path##*/}" # e.g., 0000:01:00.0
+
+        # Extract human-readable name using lspci, fallback if not a standard PCI device
+        local human_name
+        human_name=$(lspci -s "$pci_address" 2>/dev/null | sed -E 's/^[0-9a-fA-F:.]+ [^:]+: //')
+        [[ -z "$human_name" ]] && human_name="Unknown/Non-PCI Device"
+        
+        # Construct the persistent by-path link
+        local by_path_link="/dev/dri/by-path/pci-${pci_address}-card"
+
+        # Populate Metadata Maps
+        CARD_NAMES["$dev_node"]="$human_name"
+        CARD_PCI_PATHS["$dev_node"]="$by_path_link"
         
         case "$vendor_id" in
             "0x8086") INTEL_CARDS+=("$dev_node") ;;
@@ -97,10 +121,8 @@ detect_topology() {
         esac
     done
     
-    # DIAGNOSTIC: Check if any GPU was found
     if [[ ${#INTEL_CARDS[@]} -eq 0 && ${#AMD_CARDS[@]} -eq 0 && ${#NVIDIA_CARDS[@]} -eq 0 ]]; then
         log_err "No GPUs detected in /sys/class/drm. Is kernel mode setting (KMS) enabled?"
-        # We allow the script to proceed to generate a minimal config, but this is suspicious.
     fi
 }
 
@@ -130,9 +152,20 @@ select_mode() {
 
     echo ""
     echo "${BOLD}--- GPU Topology Detected ---${RESET}"
-    (( has_intel )) && echo "  • INTEL:  ${INTEL_CARDS[*]}"
-    (( has_amd ))   && echo "  • AMD:    ${AMD_CARDS[*]}"
-    (( has_nvidia )) && echo "  • NVIDIA: ${NVIDIA_CARDS[*]}"
+    
+    # Nameref helper to dynamically print associative array data
+    print_card_info() {
+        local -n cards=$1
+        for c in "${cards[@]}"; do
+            echo "  • ${BOLD}${c}${RESET}"
+            echo "      ├─ Name: ${CARD_NAMES[$c]}"
+            echo "      └─ Path: ${CARD_PCI_PATHS[$c]}"
+        done
+    }
+
+    (( has_intel ))  && { echo "${BLUE}Intel Graphics:${RESET}"; print_card_info INTEL_CARDS; }
+    (( has_amd ))    && { echo "${RED}AMD Graphics:${RESET}"; print_card_info AMD_CARDS; }
+    (( has_nvidia )) && { echo "${GREEN}NVIDIA Graphics:${RESET}"; print_card_info NVIDIA_CARDS; }
     echo ""
 
     # SCENARIO 1: Single Vendor (No choice needed)
@@ -243,9 +276,6 @@ generate_config() {
         # Vendor Specifics
         if [[ ${#INTEL_CARDS[@]} -gt 0 ]]; then
             echo "# --- Intel ---"
-            # NOTE: Removed MESA_LOADER_DRIVER_OVERRIDE=iris
-            # Modern Mesa auto-selects Iris. Hardcoding it breaks AMD hybrid setups.
-            
             if [[ "$primary_vendor" == "intel" ]]; then
                 echo "export LIBVA_DRIVER_NAME=iHD"
             fi
@@ -269,9 +299,8 @@ generate_config() {
                     echo "export NVD_BACKEND=direct"
                 else
                     echo "# Legacy Nvidia Detected"
-                    echo "# Add 'cursor { no_hardware_cursors = true }' to hyprland.conf"
-                    echo "export AQ_NO_HARDWARE_CURSORS=1"
-                    echo "export NVD_BACKEND=egl"
+                    echo "# Note: Hardware cursors are now natively managed in hyprland.conf via:"
+                    echo "# cursor { no_hardware_cursors = true }"
                 fi
             else
                 echo "# --- NVIDIA (Secondary/Hybrid) ---"
