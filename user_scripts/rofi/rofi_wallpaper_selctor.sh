@@ -538,11 +538,30 @@ resolve_path() {
   printf '%s\n' "$full_path"
 }
 
+# --- NEW FUNCTION: Extract active wallpaper directly from daemon ---
+get_active_wallpaper_filename() {
+  local swww_out current_image
+  
+  if swww_out=$(swww query 2>/dev/null | head -n 1); then
+    if [[ "$swww_out" == *image:* ]]; then
+      current_image="${swww_out##*image: }"
+      # Trim leading/trailing whitespace defensively
+      current_image="${current_image#"${current_image%%[![:space:]]*}"}"
+      current_image="${current_image%"${current_image##*[![:space:]]}"}"
+      
+      printf '%s\n' "${current_image##*/}"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Modified show_menu to accept an initial selection
 show_menu() {
   local mode=$1
   local input=$2
+  local selection=${3:-} # Injects the active wallpaper filename here
   local prompt message
-  local selection=""
   local new_selection=""
   local exit_code
   local -a rofi_cmd
@@ -574,6 +593,8 @@ show_menu() {
       rofi_cmd+=(-theme "$ROFI_THEME")
     fi
 
+    # Rofi uses `-select` to match the display string. 
+    # Because our cache uses ${rel##*/} for display, passing the filename works perfectly.
     if [[ -n $selection ]]; then
       rofi_cmd+=(-select "${selection##*/}")
     fi
@@ -706,6 +727,10 @@ main() {
   local input="$CACHE_FILE"
   local selection
   local full_path
+  local active_wal=""
+
+  # Fetch the currently rendered image to center the menu
+  active_wal=$(get_active_wallpaper_filename) || true
 
   if ((SHOW_FAVORITES)); then
     mode="favorites"
@@ -714,7 +739,8 @@ main() {
     fi
   fi
 
-  if ! selection=$(show_menu "$mode" "$input"); then
+  # Pass active_wal as the third argument to seed the selection
+  if ! selection=$(show_menu "$mode" "$input" "$active_wal"); then
     log INFO "Menu closed without selection."
     exit 0
   fi
