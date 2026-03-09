@@ -2639,30 +2639,30 @@ print_summary() {
     fi
 
     if ((${#HARD_FAILED_SCRIPTS[@]} > 0)); then
-        log ERROR "${#HARD_FAILED_SCRIPTS[@]} required script(s) failed:"
-        local fs=""
-        for fs in "${HARD_FAILED_SCRIPTS[@]}"; do
-            printf '    • %s\n' "$fs"
-        done
-    elif [[ "$SYNC_FAILED" != true && ( "$CURRENT_PHASE" == "script execution" || "$CURRENT_PHASE" == "summary" || "$CURRENT_PHASE" == "cleanup" ) ]]; then
-        log OK "All required operations completed successfully."
-    fi
+            log ERROR "${#HARD_FAILED_SCRIPTS[@]} required script(s) failed:"
+            local fs=""
+            for fs in "${HARD_FAILED_SCRIPTS[@]}"; do
+                log RAW "    • $fs"
+            done
+        elif [[ "$SYNC_FAILED" != true && ( "$CURRENT_PHASE" == "script execution" || "$CURRENT_PHASE" == "summary" || "$CURRENT_PHASE" == "cleanup" ) ]]; then
+            log OK "All required operations completed successfully."
+        fi
 
-    if ((${#SOFT_FAILED_SCRIPTS[@]} > 0)); then
-        log WARN "${#SOFT_FAILED_SCRIPTS[@]} script(s) soft failed (ignored):"
-        local fs=""
-        for fs in "${SOFT_FAILED_SCRIPTS[@]}"; do
-            printf '    • %s\n' "$fs"
-        done
-    fi
+        if ((${#SOFT_FAILED_SCRIPTS[@]} > 0)); then
+            log WARN "${#SOFT_FAILED_SCRIPTS[@]} script(s) soft failed (ignored):"
+            local fs=""
+            for fs in "${SOFT_FAILED_SCRIPTS[@]}"; do
+                log RAW "    • $fs"
+            done
+        fi
 
-    if ((${#SKIPPED_SCRIPTS[@]} > 0)); then
-        log INFO "${#SKIPPED_SCRIPTS[@]} script(s) skipped:"
-        local fs=""
-        for fs in "${SKIPPED_SCRIPTS[@]}"; do
-            printf '    • %s\n' "$fs"
-        done
-    fi
+        if ((${#SKIPPED_SCRIPTS[@]} > 0)); then
+            log INFO "${#SKIPPED_SCRIPTS[@]} script(s) skipped:"
+            local fs=""
+            for fs in "${SKIPPED_SCRIPTS[@]}"; do
+                log RAW "    • $fs"
+            done
+        fi
 
     if [[ -n "$LOG_FILE" ]]; then
         log INFO "Log saved to: $LOG_FILE"
