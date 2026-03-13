@@ -96,7 +96,7 @@ input_path  = '~/.config/matugen/templates/kitty-colors.conf'
 output_path = '~/.config/matugen/generated/kitty-colors.conf'
 post_hook   = '''
   ln -nfs "$HOME/.config/matugen/generated/kitty-colors.conf" "$HOME/.config/kitty/kitty-colors.conf"
-  pkill -SIGUSR1 kitty
+  pkill -SIGUSR1 -x kitty || :
 '''
 
 # [templates.opencode]
@@ -121,7 +121,7 @@ post_hook   = '''
 input_path  = '~/.config/matugen/templates/neovim/template.lua'
 output_path = '~/.config/matugen/generated/neovim-colors.lua'
 post_hook   = '''
-pkill -SIGUSR1 nvim
+pkill -SIGUSR1 -x nvim || :
 '''
 
 # [templates.zed]
