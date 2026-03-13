@@ -276,9 +276,17 @@ post_hook   = '''
   systemctl --user restart hyprpolkitagent || :
 '''
 
+
 [templates.conclude_notify]
 input_path  = '/dev/null'
 output_path = '/dev/null'
 post_hook   = '''
   notify-send -i applications-graphics-symbolic "Theme Updated" || :
 '''
+
+# [templates.papirus_icon_theme]
+# input_path  = '~/.config/matugen/templates/papirus'
+# output_path = '~/.config/matugen/generated/papirus'
+# post_hook   = '''
+# "$HOME/user_scripts/gtk/papirus_folder_colors.sh" || :
+# '''
