@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Rofi Wallpaper Selector
+# Rofi Wallpaper Selector (Matugen V2 Aligned & FD Leak Patched)
 # Target: Arch Linux / Hyprland / Dusky / UWSM
 # -----------------------------------------------------------------------------
 
@@ -14,6 +14,7 @@ readonly LOCK_FILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/rofi-wallpaper-select
 readonly WALLPAPER_DIR="$HOME/Pictures/wallpapers"
 readonly SETTINGS_DIR="$HOME/.config/dusky/settings"
 readonly FAVORITES_FILE="$SETTINGS_DIR/wal_fav_rofi"
+readonly STATE_FILE="$SETTINGS_DIR/dusky_theme/state.conf"
 
 readonly THUMB_SIZE=300
 readonly CACHE_VERSION=4
@@ -27,8 +28,6 @@ readonly PLACEHOLDER="$CACHE_DIR/_placeholder.png"
 readonly ROFI_THEME="$HOME/.config/rofi/wallpaper.rasi"
 readonly LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/rofi-wallpaper-selector"
 readonly LOG_FILE="$LOG_DIR/wallpaper-selector.log"
-
-readonly -a MATUGEN_ARGS=(--mode dark)
 
 declare -ag TEMP_FILES=()
 declare -gi SHOW_FAVORITES=0
@@ -142,6 +141,11 @@ acquire_lock() {
     notify "Wallpaper selector already running."
     exit 0
   fi
+}
+
+release_lock() {
+  # Explicitly close FD 200 so background daemons spawned via post_hooks do not inherit the lock
+  exec 200>&- 2>/dev/null || true
 }
 
 parse_args() {
@@ -770,7 +774,44 @@ apply_selection() {
 
   [[ -n $output ]] && log_output INFO "swww: " "$output"
 
-  if ! output=$(setsid uwsm-app -- matugen "${MATUGEN_ARGS[@]}" image "$full_path" 2>&1); then
+  # Parse the central state file to maintain synchronization with theme_ctl.sh & TUI
+  local mode="dark" type="scheme-tonal-spot" contrast="disable" index="0" base16="disable"
+  local key val
+
+  if [[ -f "$STATE_FILE" ]]; then
+    while IFS='=' read -r key val || [[ -n "$key" ]]; do
+      [[ -z "$key" || "$key" == \#* ]] && continue
+      
+      # Strip surrounding quotes safely
+      if [[ ${#val} -ge 2 ]]; then
+          if [[ "${val:0:1}" == '"' && "${val: -1}" == '"' ]]; then val="${val:1:-1}"
+          elif [[ "${val:0:1}" == "'" && "${val: -1}" == "'" ]]; then val="${val:1:-1}"
+          fi
+      fi
+
+      case "$key" in
+        THEME_MODE) mode="$val" ;;
+        MATUGEN_TYPE) type="$val" ;;
+        MATUGEN_CONTRAST) contrast="$val" ;;
+        SOURCE_COLOR_INDEX) index="$val" ;;
+        BASE16_BACKEND) base16="$val" ;;
+      esac
+    done < "$STATE_FILE"
+  fi
+
+  # Build the Matugen V2 safe execution array dynamically
+  local -a matugen_cmd=(matugen)
+  [[ "$base16" != "disable" && -n "$base16" ]] && matugen_cmd+=(--base16-backend "$base16")
+  
+  matugen_cmd+=(--mode "$mode")
+  [[ "$type" != "disable" && -n "$type" ]] && matugen_cmd+=(--type "$type")
+  [[ "$contrast" != "disable" && "$contrast" != "0.0" && "$contrast" != "0" && -n "$contrast" ]] && matugen_cmd+=(--contrast "$contrast")
+  
+  matugen_cmd+=(image "$full_path" --source-color-index "$index")
+
+  log INFO "Running Matugen: ${matugen_cmd[*]}"
+
+  if ! output=$(setsid uwsm-app -- "${matugen_cmd[@]}" 2>&1); then
     die "Failed to apply Matugen theme." "$output"
   fi
 
@@ -843,6 +884,9 @@ main() {
   if ! full_path=$(resolve_path "$selection"); then
     die "Failed to resolve wallpaper path." "$selection"
   fi
+
+  # Release the lock BEFORE spawning swww/matugen and their background hooks
+  release_lock
 
   apply_selection "$full_path"
   log INFO "Wallpaper applied successfully."
