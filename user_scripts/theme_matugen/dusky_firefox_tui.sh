@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Dusky Firefox Theme Manager - Master v1.4.1
+# Dusky Firefox Theme Manager - Master v1.5.0
 # -----------------------------------------------------------------------------
 # Target: Arch Linux / Hyprland / Wayland (Bash 5.3.9+)
 # Architecture: Cache-and-Probe with Idempotent Deployment & Matugen Sync
@@ -14,7 +14,7 @@ shopt -s extglob
 # =============================================================================
 
 declare -r APP_TITLE="Dusky Firefox Themer"
-declare -r APP_VERSION="v1.4.1 (Stable)"
+declare -r APP_VERSION="v1.5.0 (Stable)"
 
 declare -r REPO_URL="https://github.com/dim-ghub/dusky-websites/archive/refs/heads/main.tar.gz"
 declare -r CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dusky_themer"
@@ -135,6 +135,10 @@ log_err() {
     printf '%s[ERROR]%s %s\n' "$C_RED" "$C_RESET" "$1" >&2
 }
 
+log_warn() {
+    printf '%s[WARNING]%s %s\n' "$C_YELLOW" "$C_RESET" "$1" >&2
+}
+
 set_status() {
     declare -g STATUS_MESSAGE="$1"
 }
@@ -190,7 +194,6 @@ resolve_browser_profile() {
     local base_dir=""
     local b_name
 
-    # Determine Base Directory using explicitly defined preference or auto-fallback
     if [[ "${PREFERRED_BROWSER:-auto}" != "auto" ]] && [[ -n "${BROWSER_PATHS[$PREFERRED_BROWSER]:-}" ]]; then
         base_dir="${BROWSER_PATHS[$PREFERRED_BROWSER]}"
     else
@@ -202,39 +205,40 @@ resolve_browser_profile() {
         done
     fi
 
+    # Benign exit: Do not fail the script if no browser is installed.
     if [[ -z "$base_dir" || ! -d "$base_dir" ]]; then
-        log_err "No supported browser installation found (checked priority: ${BROWSER_PRIORITY[*]})."
-        exit 1
+        log_warn "No supported browser installation found (checked priority: ${BROWSER_PRIORITY[*]})."
+        FF_PROFILE=""
+        return 0
     fi
 
     local profile_path=""
     
-    # 0. Check Explicitly Configured Target Profile
     if [[ -n "${PREFERRED_PROFILE_DIR:-}" && -d "$base_dir/$PREFERRED_PROFILE_DIR" ]]; then
         profile_path="$base_dir/$PREFERRED_PROFILE_DIR"
     fi
     
-    # 1. Standard Gecko paths (Firefox, LibreWolf)
     if [[ -z "$profile_path" ]]; then
         profile_path=$(find "$base_dir" -maxdepth 1 -type d -name "*.default-release" | head -n 1)
         [[ -z "$profile_path" ]] && profile_path=$(find "$base_dir" -maxdepth 1 -type d -name "*.default" | head -n 1)
     fi
     
-    # 2. Zen Browser specific Default profiles (e.g., "*.Default (alpha)")
     [[ -z "$profile_path" ]] && profile_path=$(find "$base_dir" -maxdepth 1 -type d -name "*.Default*" | head -n 1)
-    
-    # 3. Ultimate Fallback: Any folder containing prefs.js
     [[ -z "$profile_path" ]] && profile_path=$(find "$base_dir" -maxdepth 2 -type f -name "prefs.js" -exec dirname {} \; | head -n 1)
 
+    # Benign exit: Browser is installed but no profile initialized yet.
     if [[ -z "$profile_path" ]]; then
-        log_err "Could not determine active browser profile in $base_dir."
-        exit 1
+        log_warn "Could not determine active browser profile in $base_dir."
+        FF_PROFILE=""
+        return 0
     fi
 
     FF_PROFILE="$profile_path"
 }
 
 ensure_matugen_integration() {
+    [[ -z "$FF_PROFILE" ]] && return 0
+    
     local matugen_cfg="$HOME/.config/matugen/config.toml"
     [[ -f "$matugen_cfg" && -w "$matugen_cfg" ]] || return 0
 
@@ -266,7 +270,7 @@ ensure_matugen_integration() {
             }
         }
 
-        # If found, forcefully clean any existing post_hook inside the block bounds
+        # Forcefully clean any existing post_hook inside the block bounds
         if (start) {
             for (i=start; i<=end; i++) {
                 if (lines[i] ~ /^[[:space:]]*#?[[:space:]]*output_path/) {
@@ -333,6 +337,7 @@ sync_cache() {
         exit 1
     fi
     
+    # Overwrites existing templates with fresh sync
     rm -f "$CACHE_DIR"/*.css 2>/dev/null || :
     
     local tmp_dir
@@ -380,7 +385,8 @@ probe_cache() {
         declare -ga "TAB_ITEMS_${i}=()"
     done
     
-    local user_content="$FF_PROFILE/chrome/userContent.css"
+    local user_content=""
+    [[ -n "$FF_PROFILE" ]] && user_content="$FF_PROFILE/chrome/userContent.css"
     local state="false"
     
     for (( i = 0; i < TAB_COUNT; i++ )); do
@@ -389,7 +395,7 @@ probe_cache() {
         for file in "${cat_files[@]}"; do
             [[ -z "$file" ]] && continue
             state="false"
-            if [[ -f "$user_content" ]] && grep -qF "@import url(\"websites/$file\");" "$user_content" >/dev/null; then
+            if [[ -n "$user_content" && -f "$user_content" ]] && grep -qF "@import url(\"websites/$file\");" "$user_content" >/dev/null; then
                 state="true"
             fi
             
@@ -403,6 +409,17 @@ probe_cache() {
 
 deploy_changes() {
     local mode="${1:-}"
+
+    # Safely exit with success if no browser exists
+    if [[ -z "$FF_PROFILE" ]]; then
+        local msg="No compatible browser detected. Skipping deployment."
+        if [[ "$mode" != "--headless" ]]; then
+            set_status "$msg"
+        else
+            log_warn "$msg"
+        fi
+        return 0
+    fi
     
     if [[ "$mode" != "--headless" ]]; then
         set_status "Deploying to Browser Profile..."
@@ -732,6 +749,8 @@ draw_ui() {
     buf+=$'\n'"${C_CYAN} [Tab] Category  [Space/←/→] Toggle  [r] Clear All  [Enter] Deploy  [q] Quit${C_RESET}${CLR_EOL}"$'\n'
     if [[ -n "$STATUS_MESSAGE" ]]; then
         buf+="${C_CYAN} Status:  ${C_RED}${STATUS_MESSAGE}${C_RESET}${CLR_EOL}${CLR_EOS}"
+    elif [[ -z "$FF_PROFILE" ]]; then
+        buf+="${C_CYAN} Profile: ${C_YELLOW}None detected${C_RESET}${CLR_EOL}${CLR_EOS}"
     else
         buf+="${C_CYAN} Profile: ${C_WHITE}${FF_PROFILE}${C_RESET}${CLR_EOL}${CLR_EOS}"
     fi
@@ -892,7 +911,6 @@ handle_input_router() {
         return 0
     fi
 
-    # Zero-cost array access resolving the previous parameter expansion crash
     local -n _active_tab="TAB_ITEMS_${CURRENT_TAB}"
     local active_item=""
     if (( ${#_active_tab[@]} > 0 && SELECTED_ROW >= 0 && SELECTED_ROW < ${#_active_tab[@]} )); then
@@ -939,7 +957,7 @@ run_autonomous_all() {
     done
     
     deploy_changes "--headless"
-    printf '%s[*] Successfully enabled all themes.%s\n' "$C_GREEN" "$C_RESET"
+    printf '%s[*] Processing complete.%s\n' "$C_GREEN" "$C_RESET"
     exit 0
 }
 
@@ -952,7 +970,6 @@ main() {
     local do_sync=0
     local do_all=0
 
-    # Parse CLI arguments intelligently
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --sync) do_sync=1 ;;
@@ -981,7 +998,6 @@ main() {
         run_autonomous_all
     fi
 
-    # TTY check pushed down so autonomous flags can run headlessly (e.g., from an automated script)
     if [[ ! -t 0 ]]; then log_err "TTY required for interactive mode."; exit 1; fi
 
     ORIGINAL_STTY=$(stty -g 2>/dev/null) || ORIGINAL_STTY=""

@@ -314,7 +314,7 @@ declare -ra UPDATE_SEQUENCE=(
     "U | dusky_commands_after.sh"
     "U | ignore-fail | dusky_matugen_tui.sh --smart"
 #    "U | ignore-fail | dusky_firefox_tui.sh --sync --all"
-    "U | ignore-fail hypr_anim.sh --current"
+    "U | ignore-fail | hypr_anim.sh --current"
 )
 
 # ==============================================================================
