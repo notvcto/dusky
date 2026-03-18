@@ -51,17 +51,17 @@ READY_FILE = Path("/tmp/dusky_kokoro.ready")
 LOCK_FILE = Path("/tmp/dusky_kokoro.lock")
 
 # --- VOICE SETUP ---
-# You can use a SINGLE string for one voice, OR a DICTIONARY to blend them.
-# If blending, ensure the decimals add up to 1.0. Do not mix languages.
+# Handled safely by Dusky TUI. Do not use multi-line dicts here.
+BLEND_VOICES = True
+VOICE_1 = "af_sarah"
+VOICE_1_WEIGHT = 0.4
+VOICE_2 = "af_nicole"
 
-# Example 1 (Single Voice):
-# VOICE_SETUP = "am_santa"
-
-# Example 2 (50/50 Voice Blend):
-VOICE_SETUP = {
-    "am_santa": 0.5,
-    "am_michael": 0.5,
-}
+if BLEND_VOICES:
+    # Uses round() to prevent Python floating point errors (e.g. 0.79999999)
+    VOICE_SETUP = {VOICE_1: VOICE_1_WEIGHT, VOICE_2: round(1.0 - VOICE_1_WEIGHT, 2)}
+else:
+    VOICE_SETUP = VOICE_1
 
 # --- MODEL PRECISION ---
 # Options: "f32" (Highest quality, ~310MB), "fp16" (Excellent quality, ~169MB), "int8" (Low quality/Fast, ~88MB)
