@@ -234,6 +234,7 @@ class SearchHit:
     icon_name: str
     page_idx: int
     nav_path: tuple[str, ...]
+    unique_id: str
 
 
 @dataclass(slots=True)
@@ -776,6 +777,33 @@ class DuskyControlCenter(Adw.Application):
     # ─────────────────────────────────────────────────────────────────────────
     # SEARCH FUNCTIONALITY
     # ─────────────────────────────────────────────────────────────────────────
+    def _generate_widget_id(self, title: str, nav_path: list[str] | tuple[str, ...]) -> str:
+        """Generate a deterministic ID based on breadcrumb path and title."""
+        raw_id = f"search_{'_'.join(nav_path)}_{title}".replace(" ", "_").casefold()
+        return "".join(c for c in raw_id if c.isalnum() or c == "_")
+
+    def _highlight_widget_by_id(self, parent: Gtk.Widget, unique_id: str) -> Literal[False]:
+        """Find the widget by its ID, auto-scroll to it, and trigger a visual pulse."""
+        widget = self._find_widget_by_name(parent, unique_id)
+        if widget:
+            widget.grab_focus()  # Automatically scrolls the widget into view
+            widget.add_css_class("highlight-pulse")
+            # Remove the pulse class after 1.5 seconds to complete the animation
+            GLib.timeout_add(1500, lambda w=widget: (w.remove_css_class("highlight-pulse"), GLib.SOURCE_REMOVE)[1])
+        return GLib.SOURCE_REMOVE
+
+    def _find_widget_by_name(self, parent: Gtk.Widget, name: str) -> Gtk.Widget | None:
+        """Recursively scan the GTK widget tree for a specific name."""
+        if parent.get_name() == name:
+            return parent
+        child = parent.get_first_child()
+        while child is not None:
+            found = self._find_widget_by_name(child, name)
+            if found:
+                return found
+            child = child.get_next_sibling()
+        return None
+
     def _create_search_page(self) -> None:
         """Create the search results page in the stack."""
         if self._stack is None:
@@ -960,18 +988,64 @@ class DuskyControlCenter(Adw.Application):
         root_tag = f"root_{hit.page_idx}"
         self._switch_to_page_and_reset(page_name, root_tag)
 
-        if len(hit.nav_path) <= 1 or self._stack is None:
-            return
+        target_page = None
 
-        child = self._stack.get_child_by_name(page_name)
-        if not isinstance(child, Adw.NavigationView):
-            return
+        if self._stack:
+            child = self._stack.get_child_by_name(page_name)
+            if isinstance(child, Adw.NavigationView):
+                target_page = child.get_visible_page()
+                
+                # If the item lives deep in a navigation hierarchy, we must dynamically build and push the pages
+                if len(hit.nav_path) > 1:
+                    current_layout = self._state.config.get("pages", [])[hit.page_idx].get("layout", [])
+                    current_path = [hit.nav_path[0]]
 
-        for depth in range(2, len(hit.nav_path) + 1):
-            page = child.find_page(self._make_nav_tag(hit.nav_path[:depth]))
-            if page is None:
-                break
-            child.push(page)
+                    for depth in range(1, len(hit.nav_path)):
+                        step_title = hit.nav_path[depth]
+                        current_path.append(step_title)
+                        
+                        # Helper to find the sub-layout in the config tree
+                        def find_layout(layout_data: list[Any]) -> list[Any] | None:
+                            for section in layout_data:
+                                if not isinstance(section, dict):
+                                    continue
+                                items = section.get("items", [section]) if "items" in section else [section]
+                                for item in items:
+                                    if not isinstance(item, dict):
+                                        continue
+                                    if item.get("type") == ItemType.NAVIGATION:
+                                        props = item.get("properties", {})
+                                        if str(props.get("title", "")).strip() == step_title:
+                                            return item.get("layout", [])
+                                    elif item.get("type") == ItemType.EXPANDER:
+                                        exp_res = find_layout([{"items": item.get("items", [])}])
+                                        if exp_res is not None:
+                                            return exp_res
+                            return None
+
+                        next_layout = find_layout(current_layout)
+                        if next_layout is None:
+                            break
+                        
+                        current_layout = next_layout
+                        tag = self._make_nav_tag(current_path)
+                        page = child.find_page(tag)
+                        
+                        # If the page hasn't been built yet, build it now
+                        if page is None:
+                            ctx = self._get_context(
+                                nav_view=child,
+                                builder_func=self._build_nav_page,
+                                path=list(current_path),
+                            )
+                            page = self._build_nav_page(step_title, current_layout, ctx)
+                            
+                        child.push(page)
+                        target_page = page
+
+        # Initiate highlight with a slight delay so GTK can calculate layout and scroll bounds
+        if target_page:
+            GLib.timeout_add(150, self._highlight_widget_by_id, target_page, hit.unique_id)
 
     def _extract_icon_name(self, props: dict[str, Any]) -> str:
         icon_config = props.get("icon", ICON_DEFAULT)
@@ -1053,15 +1127,17 @@ class DuskyControlCenter(Adw.Application):
         title = str(props.get("title", "")).strip()
         desc = str(props.get("description", "")).strip()
 
-        if item_type not in (ItemType.NAVIGATION, ItemType.EXPANDER):
-            if query in title.casefold() or query in desc.casefold():
-                yield SearchHit(
-                    title=title or "Unnamed",
-                    description=f"{breadcrumb} • {desc}" if desc else breadcrumb,
-                    icon_name=self._extract_icon_name(props),
-                    page_idx=page_idx,
-                    nav_path=nav_path,
-                )
+        unique_id = self._generate_widget_id(title, nav_path)
+
+        if query in title.casefold() or query in desc.casefold():
+            yield SearchHit(
+                title=title or "Unnamed",
+                description=f"{breadcrumb} • {desc}" if desc else breadcrumb,
+                icon_name=self._extract_icon_name(props),
+                page_idx=page_idx,
+                nav_path=nav_path,
+                unique_id=unique_id,
+            )
 
         if item_type == ItemType.NAVIGATION:
             sub_title = title or "Submenu"
@@ -1352,6 +1428,7 @@ class DuskyControlCenter(Adw.Application):
             else:
                 card = rows.GridCard(item_props, item.get("on_press"), ctx)
 
+            card.set_name(self._generate_widget_id(str(item_props.get("title", "")), ctx.get("path", [])))
             flow.append(card)
 
         group.add(flow)
@@ -1454,34 +1531,42 @@ class DuskyControlCenter(Adw.Application):
         """
         item_type = item.get("type", "")
         props = item.get("properties", {})
+        row = None
 
         try:
             match item_type:
                 case ItemType.BUTTON:
-                    return rows.ButtonRow(props, item.get("on_press"), ctx)
+                    row = rows.ButtonRow(props, item.get("on_press"), ctx)
                 case ItemType.TOGGLE:
-                    return rows.ToggleRow(props, item.get("on_toggle"), ctx)
+                    row = rows.ToggleRow(props, item.get("on_toggle"), ctx)
                 case ItemType.GRID_CARD:
-                    return rows.ButtonRow(props, item.get("on_press"), ctx)
+                    row = rows.ButtonRow(props, item.get("on_press"), ctx)
                 case ItemType.TOGGLE_CARD:
-                    return rows.ToggleRow(props, item.get("on_toggle"), ctx)
+                    row = rows.ToggleRow(props, item.get("on_toggle"), ctx)
                 case ItemType.LABEL:
-                    return rows.LabelRow(props, item.get("value"), ctx)
+                    row = rows.LabelRow(props, item.get("value"), ctx)
                 case ItemType.SLIDER:
-                    return rows.SliderRow(props, item.get("on_change"), ctx)
+                    row = rows.SliderRow(props, item.get("on_change"), ctx)
                 case ItemType.SELECTION:
-                    return rows.SelectionRow(props, item.get("on_change"), ctx)
+                    row = rows.SelectionRow(props, item.get("on_change"), ctx)
                 case ItemType.ENTRY:
-                    return rows.EntryRow(props, item.get("on_action"), ctx)
+                    row = rows.EntryRow(props, item.get("on_action"), ctx)
                 case ItemType.NAVIGATION:
-                    return rows.NavigationRow(props, item.get("layout"), ctx)
+                    row = rows.NavigationRow(props, item.get("layout"), ctx)
                 case ItemType.EXPANDER:
-                    return rows.ExpanderRow(props, item.get("items"), ctx)
+                    row = rows.ExpanderRow(props, item.get("items"), ctx)
                 case ItemType.WARNING_BANNER:
-                    return self._build_warning_banner(props)
+                    row = self._build_warning_banner(props)
                 case _:
                     log.warning("Unknown item type '%s', defaulting to button", item_type)
-                    return rows.ButtonRow(props, item.get("on_press"), ctx)
+                    row = rows.ButtonRow(props, item.get("on_press"), ctx)
+
+            if row is not None:
+                title = str(props.get("title", ""))
+                row.set_name(self._generate_widget_id(title, ctx.get("path", [])))
+            
+            return row
+
         except Exception as e:
             log.error("Failed to build row for type '%s': %s", item_type, e)
             return self._build_error_row(str(e), props.get("title", "Unknown"))
