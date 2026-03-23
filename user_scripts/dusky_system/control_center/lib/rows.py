@@ -1852,10 +1852,10 @@ class ExpanderRow(DynamicIconMixin, Adw.ExpanderRow):
 
 
 
-class AsyncSelectorRow(BaseActionRow):
+class AsyncSelectorRow(DynamicIconMixin, Adw.ComboRow):
     """
     A generalized widget that fetches a JSON array of dictionaries,
-    populates a dropdown using a display template, and executes a command.
+    populates a native Adw.ComboRow, and executes a command.
     """
     __gtype_name__ = "DuskyAsyncSelectorRow"
 
@@ -1865,15 +1865,21 @@ class AsyncSelectorRow(BaseActionRow):
         on_action: ActionConfig | None = None,
         context: RowContext | None = None,
     ) -> None:
-        super().__init__(properties, on_action, context)
+        super().__init__()
+        self.add_css_class("action-row")
+
+        self._state = WidgetState()
+        self.properties = properties
+        self.on_action: ActionConfig = on_action or {}
+        self.context: RowContext = context or {}
+        self.config: dict[str, object] = self.context.get("config") or {}
+        self.sidebar: Gtk.ListBox | None = self.context.get("sidebar")
+        self.toast_overlay: Adw.ToastOverlay | None = self.context.get("toast_overlay")
 
         self.list_command = str(properties.get("list_command", ""))
         self.display_template = str(properties.get("display_template", "{id}"))
         self.sort_order = str(properties.get("sort", "none")).lower()
-
         self.auto_refresh = bool(properties.get("auto_refresh", False))
-        # Default to 30 characters width limit to prevent UI squishing
-        self.display_max_length = _safe_int(properties.get("display_max_length"), 30)
 
         button_text = str(properties.get("button_text", "Execute"))
         button_style = str(properties.get("style", "default")).lower()
@@ -1881,6 +1887,21 @@ class AsyncSelectorRow(BaseActionRow):
         self.json_data: list[dict] = []
         self._fetch_in_progress = False
 
+        title = str(properties.get("title", "Unnamed"))
+        self.set_title(GLib.markup_escape_text(title))
+        if sub := properties.get("description", ""):
+            self.set_subtitle(GLib.markup_escape_text(str(sub)))
+
+        icon_config = properties.get("icon", DEFAULT_ICON)
+        self.icon_widget = self._create_icon_widget(icon_config)
+        self.add_prefix(self.icon_widget)
+
+        # --- NATIVE COMBO ROW SETUP ---
+        self.string_list = Gtk.StringList.new([])
+        self.set_model(self.string_list)
+        # ------------------------------
+
+        # Suffix Controls
         self.controls_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.controls_box.set_valign(Gtk.Align.CENTER)
 
@@ -1891,18 +1912,6 @@ class AsyncSelectorRow(BaseActionRow):
 
         if self.auto_refresh:
             self.refresh_btn.set_visible(False)
-
-        self.model = Gtk.StringList.new([])
-        self.dropdown = Gtk.DropDown(model=self.model)
-        self.dropdown.set_valign(Gtk.Align.CENTER)
-        self.dropdown.set_halign(Gtk.Align.END)
-        self.dropdown.set_hexpand(False)
-
-        # UI FIX: Implement a strict factory to prevent width starvation
-        factory = Gtk.SignalListItemFactory()
-        factory.connect("setup", self._on_dropdown_setup)
-        factory.connect("bind", self._on_dropdown_bind)
-        self.dropdown.set_factory(factory)
 
         self.action_btn = Gtk.Button(label=button_text)
         self.action_btn.connect("clicked", self._on_action_clicked)
@@ -1916,28 +1925,31 @@ class AsyncSelectorRow(BaseActionRow):
             self.action_btn.add_css_class("default-action")
 
         self.controls_box.append(self.refresh_btn)
-        self.controls_box.append(self.dropdown)
         self.controls_box.append(self.action_btn)
-
+        
+        # Add the controls to the ComboRow suffix
         self.add_suffix(self.controls_box)
+
         self.connect("map", self._on_map)
 
-    def _on_dropdown_setup(self, factory: Gtk.SignalListItemFactory, list_item: Gtk.ListItem) -> None:
-        """Configures the UI limits for each dropdown item."""
-        label = Gtk.Label(xalign=0)
-        label.set_ellipsize(Pango.EllipsizeMode.END)
-        label.set_max_width_chars(self.display_max_length)
-        list_item.set_child(label)
+        if _is_dynamic_icon(icon_config) and isinstance(icon_config, dict):
+            self._start_icon_update_loop(icon_config)
 
-    def _on_dropdown_bind(self, factory: Gtk.SignalListItemFactory, list_item: Gtk.ListItem) -> None:
-        """Binds the string data to the UI label."""
-        label = list_item.get_child()
-        string_obj = list_item.get_item()
-        if label and string_obj:
-            label.set_text(string_obj.get_string())
+    def _create_icon_widget(self, icon: object) -> Gtk.Image:
+        if isinstance(icon, dict) and icon.get("type") == "file":
+            if path := icon.get("path"):
+                p = _expand_path(str(path))
+                if p.exists():
+                    img = Gtk.Image.new_from_file(str(p))
+                    img.add_css_class("action-row-prefix-icon")
+                    return img
+
+        icon_name = _resolve_static_icon_name(icon)
+        img = Gtk.Image.new_from_icon_name(icon_name)
+        img.add_css_class("action-row-prefix-icon")
+        return img
 
     def _on_map(self, _widget: Gtk.Widget) -> None:
-        """Triggered when the widget is drawn on screen."""
         if self.auto_refresh and not self.json_data and not self._fetch_in_progress:
             self._on_refresh_clicked(self.refresh_btn)
 
@@ -1959,11 +1971,11 @@ class AsyncSelectorRow(BaseActionRow):
             res = subprocess.run(argv, capture_output=True, text=True, check=True)
 
             output = res.stdout.strip()
-            parsed_data = json.loads(output)
+            parsed_data = json.loads(output) if output else []
 
             if not isinstance(parsed_data, list):
                 raise ValueError("Expected a JSON array.")
-            if not all(isinstance(item, dict) for item in parsed_data):
+            if parsed_data and not all(isinstance(item, dict) for item in parsed_data):
                 raise ValueError("Expected every JSON array item to be a dictionary object.")
 
             GLib.idle_add(self._update_ui, parsed_data)
@@ -1982,30 +1994,25 @@ class AsyncSelectorRow(BaseActionRow):
         else:
             self.json_data = list(parsed_data)
 
-        self.model.splice(0, self.model.get_n_items(), [])
         strings: list[str] = []
 
         class SafeDict(dict):
-            """Prevents KeyError if the template requests a missing JSON key"""
             def __missing__(self, key):
                 return f"{{{key}}}"
 
         for item in self.json_data:
             try:
                 label = self.display_template.format_map(SafeDict(item))
-
-                # Prevent GTK UI Squishing by enforcing a max character length
-                if len(label) > self.display_max_length:
-                    label = label[:self.display_max_length - 3] + "..."
-
                 strings.append(label)
             except Exception:
                 strings.append("Format Error")
 
+        # Graceful empty state handling
         if not strings:
-             strings.append("(No Snapshots)")
+            strings.append("(No Snapshots)")
+            self.json_data = []
 
-        self.model.splice(0, 0, strings)
+        self.string_list.splice(0, self.string_list.get_n_items(), strings)
 
         has_valid_action = isinstance(self.on_action, dict) and (
             (self.on_action.get("type") == "exec" and bool(self.on_action.get("command")))
@@ -2023,7 +2030,7 @@ class AsyncSelectorRow(BaseActionRow):
                 return GLib.SOURCE_REMOVE
 
         self.json_data.clear()
-        self.model.splice(0, self.model.get_n_items(), [])
+        self.string_list.splice(0, self.string_list.get_n_items(), [])
         self.refresh_btn.set_sensitive(True)
         self.action_btn.set_sensitive(False)
 
@@ -2033,7 +2040,8 @@ class AsyncSelectorRow(BaseActionRow):
         return GLib.SOURCE_REMOVE
 
     def _on_action_clicked(self, _btn: Gtk.Button) -> None:
-        selected_idx = self.dropdown.get_selected()
+        # Pull selection natively from the Adw.ComboRow
+        selected_idx = self.get_selected()
         if selected_idx == Gtk.INVALID_LIST_POSITION or selected_idx >= len(self.json_data):
             return
 
@@ -2047,9 +2055,7 @@ class AsyncSelectorRow(BaseActionRow):
                 def __missing__(self, key):
                     return f"{{{key}}}"
 
-            # Inject the JSON values into the execution command
             final_cmd = cmd_template.format_map(SafeDict(selected_dict))
-
             title = str(self.properties.get("title", "Action"))
             is_term = bool(self.on_action.get("terminal", False))
 
@@ -2060,6 +2066,11 @@ class AsyncSelectorRow(BaseActionRow):
         elif self.on_action.get("type") == "redirect":
             if pid := self.on_action.get("page"):
                 _perform_redirect(str(pid), self.config, self.sidebar)
+
+    def do_unroot(self) -> None:
+        sources = self._state.mark_destroyed_and_get_sources()
+        _batch_source_remove(*sources)
+        Adw.ComboRow.do_unroot(self)
 
 # =============================================================================
 # GRID CARDS
