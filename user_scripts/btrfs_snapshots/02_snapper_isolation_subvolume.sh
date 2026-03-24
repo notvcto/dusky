@@ -285,6 +285,41 @@ apply_global_btrfs_tuning() {
     info "Applied global Btrfs tuning parameters."
 }
 
+enforce_flat_topology() {
+    local sv tmp
+
+    # 1. Destroy existing nested subvolumes
+    for sv in /var/lib/machines /var/lib/portables; do
+        if path_is_btrfs_subvolume "$sv"; then
+            # Unmount in case systemd-machined is actively using it
+            mountpoint -q "$sv" && sudo umount -q "$sv" 2>/dev/null || true
+            sudo btrfs subvolume delete "$sv" >/dev/null 2>&1 || warn "Failed to delete subvolume $sv"
+            info "Deleted nested systemd subvolume: $sv"
+        fi
+
+        # Recreate them as standard directories immediately
+        if [[ ! -e "$sv" ]]; then
+            sudo mkdir -p "$sv"
+            sudo chmod 0755 "$sv"
+        fi
+    done
+
+    # 2. Override systemd tmpfiles to permanently prevent subvolume recreation ('v' -> 'd')
+    sudo mkdir -p /etc/tmpfiles.d
+
+    tmp="$(mktemp)"
+    ACTIVE_TEMP_FILES+=("$tmp")
+    echo "d /var/lib/machines 0755 - - -" > "$tmp"
+    atomic_write /etc/tmpfiles.d/systemd-nspawn.conf "$tmp"
+
+    tmp="$(mktemp)"
+    ACTIVE_TEMP_FILES+=("$tmp")
+    echo "d /var/lib/portables 0755 - - -" > "$tmp"
+    atomic_write /etc/tmpfiles.d/portables.conf "$tmp"
+
+    info "Applied systemd tmpfiles overrides to permanently enforce flat Btrfs topology."
+}
+
 preflight_checks() {
     (( EUID != 0 )) || fatal "Run as regular user with sudo."
     require_cmd sudo; require_cmd pacman; require_cmd findmnt; require_cmd awk; require_cmd realpath; require_cmd grep; require_cmd stat; require_cmd mktemp
@@ -316,3 +351,4 @@ execute "Verify Snapper home" verify_snapper_works "home"
 execute "Tune Snapper home" tune_snapper "home"
 
 execute "Apply Global Btrfs Settings" apply_global_btrfs_tuning
+execute "Enforce Flat Topology" enforce_flat_topology
