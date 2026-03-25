@@ -1302,16 +1302,15 @@ pages:
         title: 24-Hour Clock
         description: Toggle between 12hr (AM/PM) and 24hr format
         icon: preferences-system-time-symbolic
-        state_command: "grep -q '%H:%M' $HOME/.config/waybar/config.jsonc && echo yes"
-        interval: 5
+        key: time_format
       on_toggle:
         enabled:
           type: exec
-          command: "sed -i 's/{:%I:%M %p}/{:%H:%M}/g' $HOME/.config/waybar/config.jsonc && pkill -USR2 -x waybar"
+          command: "~/user_scripts/waybar/toggle_time.sh --24"
           terminal: false
         disabled:
           type: exec
-          command: "sed -i 's/{:%H:%M}/{:%I:%M %p}/g' $HOME/.config/waybar/config.jsonc && pkill -USR2 -x waybar"
+          command: "~/user_scripts/waybar/toggle_time.sh --12"
           terminal: false
 
   - type: section
