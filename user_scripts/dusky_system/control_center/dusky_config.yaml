@@ -336,6 +336,22 @@ pages:
                 type: "exec"
                 command: "sudo ~/user_scripts/btrfs_snapshots/cc/04_dusky_snapshot_manager.py -c home -R {id}"
 
+        - type: section
+          properties:
+            title: Setup
+            description: Configure BTRFS subvolumes
+          items:
+            - type: button
+              properties:
+                title: BTRFS Sub-volume Setup
+                description: Configure limine, snapper isolation, and pacman hooks
+                icon: preferences-system-symbolic
+                button_text: "Open"
+              on_press:
+                type: redirect
+                page: setup_features
+                subpage: BTRFS Sub-volume Setup
+
   - type: section
     properties:
       title: Dusky Updates
@@ -2122,6 +2138,47 @@ pages:
         type: exec
         command: kitty --class 465_sddm_setup.sh --hold sh -c "$HOME/user_scripts/arch_setup_scripts/scripts/465_sddm_setup.sh"
         terminal: false
+
+    - type: navigation
+      properties:
+        title: BTRFS Sub-volume Setup
+        description: Configure BTRFS snapshots and snapper
+        icon: document-save-symbolic
+      layout:
+        - type: section
+          properties:
+            title: BTRFS Setup
+          items:
+            - type: button
+              properties:
+                title: 'Step 1: Limine Setup'
+                description: Configure Limine bootloader for BTRFS
+                icon: computer-symbolic
+                button_text: "Setup"
+              on_press:
+                type: exec
+                command: kitty --class 01_limine_setup.sh --hold sh -c "$HOME/user_scripts/btrfs_setup/01_limine_setup.sh"
+                terminal: false
+            - type: button
+              properties:
+                title: 'Step 2: Snapper Isolation Subvolume'
+                description: Configure snapper isolation subvolume
+                icon: drive-harddisk-system-symbolic
+                button_text: "Setup"
+              on_press:
+                type: exec
+                command: kitty --class 02_snapper_isolation_subvolume.sh --hold sh -c "$HOME/user_scripts/btrfs_setup/02_snapper_isolation_subvolume.sh"
+                terminal: false
+            - type: button
+              properties:
+                title: 'Step 3: Snapper Pacman Hooks'
+                description: Enable automatic snapshots on pacman operations
+                icon: system-software-install-symbolic
+                button_text: "Setup"
+              on_press:
+                type: exec
+                command: kitty --class 03_snapper_pacman_hooks.sh --hold sh -c "$HOME/user_scripts/btrfs_setup/03_snapper_pacman_hooks.sh"
+                terminal: false
 
   - type: section
     properties:
