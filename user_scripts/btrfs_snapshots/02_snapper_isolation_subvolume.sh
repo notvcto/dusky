@@ -152,12 +152,21 @@ verify_snapshots_mount() {
     info "${mount_target} is mounted correctly."
 }
 
-install_packages() { sudo pacman -S --needed --noconfirm snapper btrfs-progs; }
+install_packages() {
+    info "Reinstalling Snapper runtime packages for maximum reliability..."
+    sudo pacman -S --noconfirm snapper boost-libs btrfs-progs
+    command -v ldconfig >/dev/null 2>&1 && sudo ldconfig
+}
+
+verify_snapper_runtime() {
+    sudo snapper --help >/dev/null 2>&1 || fatal "snapper is installed but not runnable. This usually indicates a package/runtime mismatch (commonly snapper vs boost-libs)."
+}
 
 post_install_checks() {
     require_cmd btrfs
     require_cmd snapper
     require_cmd systemctl
+    verify_snapper_runtime
     path_is_btrfs_subvolume "/home" || fatal "/home is not a Btrfs subvolume."
 }
 
@@ -342,7 +351,15 @@ enforce_flat_topology() {
 
 preflight_checks() {
     (( EUID != 0 )) || fatal "Run as regular user with sudo."
-    require_cmd sudo; require_cmd pacman; require_cmd findmnt; require_cmd awk; require_cmd realpath; require_cmd grep; require_cmd stat; require_cmd mktemp
+    require_cmd sudo
+    require_cmd pacman
+    require_cmd findmnt
+    require_cmd awk
+    require_cmd realpath
+    require_cmd grep
+    require_cmd stat
+    require_cmd mktemp
+    require_cmd mountpoint
     [[ "$(stat -f -c %T /)" == "btrfs" ]] || fatal "Root is not Btrfs."
     [[ "$(stat -f -c %T /home)" == "btrfs" ]] || fatal "/home is not Btrfs."
     sudo -v || fatal "Cannot obtain sudo privileges."
@@ -350,7 +367,10 @@ preflight_checks() {
     SUDO_PID=$!
 }
 
-preflight_checks; quiesce_snapper; execute "Install Snapper" install_packages; post_install_checks
+preflight_checks
+quiesce_snapper
+execute "Reinstall Snapper runtime packages" install_packages
+post_install_checks
 
 # --- ROOT SNAPSHOT CONFIG ---
 execute "Create Snapper root" ensure_snapper_config "root" "/"
