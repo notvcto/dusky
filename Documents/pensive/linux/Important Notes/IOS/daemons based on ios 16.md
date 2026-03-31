@@ -66,7 +66,7 @@ Conservative legend:
 |55|bluetoothuserd|User-level Bluetooth support|if-unused|
 |56|bookassetd|Apple Books asset management|if-unused|
 |57|bookdatastored|Apple Books data storage and sync|if-unused|
-|58|bootps|BOOTP/DHCP service used for tethering or USB networking|if-unused|
+|58|bootps|BOOTP/DHCP service used for tethering or USB networking|no|
 |59|BTServer.avrcp|Bluetooth media control profile support|if-unused|
 |60|BTServer.le|Bluetooth Low Energy support|if-unused|
 |61|BTServer.map|Bluetooth Message Access Profile support|if-unused|
@@ -116,7 +116,7 @@ Conservative legend:
 |105|corerepaird|Repair status / parts validation service|if-unused|
 |106|coreservices.useractivityd|NSUserActivity and Handoff support|if-unused|
 |107|corespeechd|Core speech service for Siri / voice trigger support|if-unused|
-|108|corespotlightservice|Core Spotlight indexing/search support|no|
+|108|corespotlightservice|Core Spotlight indexing/search support|yes|
 |109|countryd|Country/region determination service|no|
 |110|ctkd|CryptoTokenKit daemon for smart cards/token credentials|if-unused|
 |111|dasd|Duet Activity Scheduler for background tasks|NO|
@@ -138,7 +138,7 @@ Conservative legend:
 |127|dietapplecamerad|Lightweight camera service used by specific pipelines|no|
 |128|dietappleh13camerad|Hardware-specific lightweight camera daemon|no|
 |129|diskarbitrationd|Disk arbitration and mount management|no|
-|130|diskimagesiod|Disk image mount support service|yes|
+|130|diskimagesiod|Disk image mount support service|NO|
 |131|diskimagesiod.ram|RAM disk image support service|yes|
 |132|distnoted.xpc.daemon|Distributed notifications service|NO|
 |133|dmd|Declarative Device Management daemon|if-unused|
@@ -165,9 +165,9 @@ Conservative legend:
 |154|familynotificationd|Family Sharing notifications daemon|if-unused|
 |155|fdrhelper|Factory restore / calibration key helper|no|
 |156|FileCoordination|File coordination service|no|
-|157|FileProvider|Files app and third-party file-provider support|if-unused|
+|157|FileProvider|Files app and third-party file-provider support|no|
 |158|filesystems.apfs_iosd|APFS filesystem management daemon|NO|
-|159|filesystems.livefileproviderd|Live File Provider filesystem support|if-unused|
+|159|filesystems.livefileproviderd|Live File Provider filesystem support|no|
 |160|filesystems.smbclientd|SMB client daemon for network shares|if-unused|
 |161|filesystems.userfs_helper|User-space filesystem helper|no|
 |162|filesystems.userfsd|User-space filesystem daemon|no|
