@@ -344,7 +344,7 @@ Conservative legend:
 | 333 | purplebuddy.budd              | Setup Assistant daemon                                                | if-unused                      |
 | 334 | PurpleReverseProxy            | Reverse proxy used by some USB/device communication flows             | if-unused                      |
 | 335 | quicklook.ThumbnailsAgent     | Quick Look thumbnail-generation service                               | if-unused                      |
-| 336 | rapportd                      | Continuity and device proximity/trust service                         | if-unused                      |
+| 336 | rapportd                      | CAUSED HIGH CPU USAGE IF DISABLED                                     | NO                             |
 | 337 | recentsd                      | Recent contacts and suggestions daemon                                | yes                            |
 | 338 | relatived                     | Motion/sensor-relative tracking service                               | if-unused                      |
 | 339 | remindd                       | Reminders database/sync daemon                                        | if-unused                      |
