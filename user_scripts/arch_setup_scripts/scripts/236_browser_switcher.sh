@@ -29,7 +29,7 @@ shopt -s extglob
 declare -ra BROWSER_CATALOG=(
     "firefox|0|firefox.desktop|Firefox"
     "chromium|0|chromium.desktop|Chromium"
-    "zen-browser|0|zen.desktop|Zen Browser"
+    "zen|0|zen.desktop|Zen Browser"
     "brave|0|brave-browser.desktop|Brave"
     "librewolf|0|librewolf.desktop|LibreWolf"
     "edge|0|microsoft-edge.desktop|Microsoft Edge"
