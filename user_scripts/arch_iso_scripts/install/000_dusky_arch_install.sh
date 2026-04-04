@@ -1,26 +1,28 @@
 #!/usr/bin/env bash
 # ==============================================================================
-#  UNIFIED ARCH ORCHESTRATOR (v3.3 - The Ultimate Edition)
+#  UNIFIED ARCH ORCHESTRATOR (v3.4 - The Master Engine)
 #  Context: Self-aware Phase 1 (ISO) and Phase 2 (Chroot) execution.
 #  Usage: ./000_dusky_arch_install.sh [--auto|-a] [--dry-run|-d] [--reset]
 # ==============================================================================
 
 # --- 1. SCRIPT SEQUENCES ---
+# Added Soft-Failure Syntax: Append " | IGNORE" to allow the script to proceed 
+# even if a non-critical component fails.
+
 declare -ra ISO_SEQUENCE=(
   "020_environment_prep.sh --auto"
   "030_partitioning.sh --auto"
   "040_disk_mount.sh --auto"
-  "050_mirrorlist.sh"
+  "050_mirrorlist.sh | IGNORE" # Example: If mirror updates fail, keep going
   "060_console_fix.sh"
   "070_pacstrap.sh --auto"
-#  "080_script_directories_population_in_chroot.sh"
   "090_fstab.sh"
 )
 
 declare -ra CHROOT_SEQUENCE=(
   "100_etc_skel.sh --auto"
   "110_post_chroot.sh --auto"
-  "120_mkintcpip_optimizer.sh"
+  "120_mkintcpip_optimizer.sh | IGNORE" # Example: Optimization soft-fail
   "130_chroot_package_installer.sh --auto"
   "140_mkinitcpio_generation.sh"
   "150_limine_bootloader.sh --auto"
@@ -61,7 +63,7 @@ if [[ -f "$ENV_PASSTHROUGH_FILE" ]]; then
 fi
 
 # --- 4. STATE, LOCKING & CHROOT AWARENESS ---
-declare -a EXECUTED_SCRIPTS=() SKIPPED_SCRIPTS=() FAILED_SCRIPTS=() INSTALL_SEQUENCE=()
+declare -a EXECUTED_SCRIPTS=() SKIPPED_SCRIPTS=() FAILED_SCRIPTS=() SOFT_FAILED_SCRIPTS=() INSTALL_SEQUENCE=()
 declare -gA COMPLETED_SCRIPTS=()
 declare -i DRY_RUN="${DRY_RUN:-0}" AUTO_MODE="${AUTO_MODE:-0}" IN_CHROOT=0 RESET_STATE=0 TOTAL_START_TIME
 
@@ -108,16 +110,21 @@ print_summary() {
     printf "\n%s%s=== PHASE SUMMARY ===%s\n" "$B" "$HL" "$RS"
     
     if (( ${#EXECUTED_SCRIPTS[@]} > 0 )); then
-        printf "%s[Executed]%s %d script(s)\n" "$G" "$RS" "${#EXECUTED_SCRIPTS[@]}"
+        printf "%s[Executed]%s    %d script(s)\n" "$G" "$RS" "${#EXECUTED_SCRIPTS[@]}"
     fi
     
     if (( ${#SKIPPED_SCRIPTS[@]} > 0 )); then
-        printf "%s[Skipped]%s  %d script(s):\n" "$Y" "$RS" "${#SKIPPED_SCRIPTS[@]}"
+        printf "%s[Skipped]%s     %d script(s):\n" "$Y" "$RS" "${#SKIPPED_SCRIPTS[@]}"
         for s in "${SKIPPED_SCRIPTS[@]}"; do printf "  - %s\n" "$s"; done
+    fi
+
+    if (( ${#SOFT_FAILED_SCRIPTS[@]} > 0 )); then
+        printf "%s[Soft-Failed]%s %d script(s) (Ignored):\n" "$Y" "$RS" "${#SOFT_FAILED_SCRIPTS[@]}"
+        for s in "${SOFT_FAILED_SCRIPTS[@]}"; do printf "  - %s\n" "$s"; done
     fi
     
     if (( ${#FAILED_SCRIPTS[@]} > 0 )); then
-        printf "%s[Failed]%s   %d script(s):\n" "$R" "$RS" "${#FAILED_SCRIPTS[@]}"
+        printf "%s[Failed]%s      %d script(s):\n" "$R" "$RS" "${#FAILED_SCRIPTS[@]}"
         for s in "${FAILED_SCRIPTS[@]}"; do printf "  - %s\n" "$s"; done
     fi
     
@@ -150,25 +157,44 @@ get_script_description() {
 
 # --- 7. EXECUTION ENGINE ---
 execute_script() {
-    local entry="$1" current="$2" total="$3" start_time exit_code
+    local entry="$1" state_key="$2" current="$3" total="$4" start_time exit_code
     
-    # Split filename from arguments
-    local script_name script_args
-    read -r script_name script_args <<< "$entry"
+    # Parse Command vs Failure Mode (IGNORE syntax)
+    local raw_command fail_mode ignore_fail=0
+    IFS='|' read -r raw_command fail_mode <<< "$entry"
+    raw_command="${raw_command#"${raw_command%%[![:space:]]*}"}" # Trim leading
+    raw_command="${raw_command%"${raw_command##*[![:space:]]}"}" # Trim trailing
 
-    if [[ -n "${COMPLETED_SCRIPTS[$script_name]:-}" ]]; then
+    if [[ -n "$fail_mode" && "${fail_mode,,}" == *"ignore"* ]]; then
+        ignore_fail=1
+    fi
+
+    # Extract script name and args
+    local script_name script_args
+    read -r script_name script_args <<< "$raw_command"
+
+    if [[ -n "${COMPLETED_SCRIPTS[$state_key]:-}" ]]; then
         log OK "[$current/$total] Skipping: ${HL}$script_name${RS} (Already Completed)"
         return 0
     fi
 
-    # Propagate Orchestrator arguments downward to child scripts
+    # Propagate Orchestrator arguments downward
     local child_args=()
     [[ -n "$script_args" ]] && read -ra appended_args <<< "$script_args" && child_args+=("${appended_args[@]}")
     (( AUTO_MODE )) && child_args+=("--auto")
     (( DRY_RUN )) && child_args+=("--dry-run")
 
+    # Retry Engine Mechanics
+    local max_attempts=3
+    local attempt=1
+
     while true; do
-        log INFO "[$current/$total] Executing: ${HL}$entry${RS}"
+        if (( attempt > 1 )); then
+            log INFO "[$current/$total] Retrying: ${HL}$raw_command${RS} (Attempt $attempt/$max_attempts)"
+        else
+            log INFO "[$current/$total] Executing: ${HL}$raw_command${RS}"
+        fi
+        
         start_time=$SECONDS
 
         set +e
@@ -177,42 +203,59 @@ execute_script() {
         set -e
 
         if (( exit_code == 0 )); then
-            echo "$script_name" >> "$STATE_FILE"
-            COMPLETED_SCRIPTS["$script_name"]=1
+            echo "$state_key" >> "$STATE_FILE"
+            COMPLETED_SCRIPTS["$state_key"]=1
             log OK "Finished: $script_name ($((SECONDS - start_time))s)"
             EXECUTED_SCRIPTS+=("$script_name")
             return 0
-        else
-            log ERR "Failed: $script_name (Exit Code: $exit_code)"
-            FAILED_SCRIPTS+=("$script_name")
-
-            if (( AUTO_MODE )); then
-                log ERR "AUTO_MODE is enabled; aborting after failure."
-                exit "$exit_code"
-            fi
-
-            printf "%sAction Required:%s Script execution failed.\n" "$Y" "$RS"
-            if ! read -r -p "[R]etry, [S]kip, or [A]bort? (r/s/a): " action; then
-                log ERR "Interactive input closed; aborting."
-                exit "$exit_code"
-            fi
-            
-            case "${action,,}" in
-                r|retry)
-                    unset 'FAILED_SCRIPTS[-1]'
-                    continue
-                    ;;
-                s|skip)
-                    log WARN "Skipping. NOT marking as complete."
-                    unset 'FAILED_SCRIPTS[-1]'
-                    SKIPPED_SCRIPTS+=("$script_name")
-                    return 0
-                    ;;
-                *)
-                    exit "$exit_code"
-                    ;;
-            esac
         fi
+
+        # Handle Soft Failures
+        if (( ignore_fail == 1 )); then
+            log WARN "Failed: $script_name (Exit Code: $exit_code) - ignored via IGNORE flag."
+            SOFT_FAILED_SCRIPTS+=("$script_name")
+            return 0
+        fi
+
+        # Evaluate Retries (Network Resilience)
+        if (( attempt < max_attempts )); then
+            ((attempt++))
+            log WARN "Execution failed (Exit Code: $exit_code). Waiting 2 seconds before retry..."
+            sleep 2
+            continue
+        fi
+
+        # Absolute Failure Reached
+        log ERR "Failed: $script_name (Exit Code: $exit_code)"
+        FAILED_SCRIPTS+=("$script_name")
+
+        if (( AUTO_MODE )); then
+            log ERR "AUTO_MODE is enabled and retry limit reached; aborting."
+            exit "$exit_code"
+        fi
+
+        printf "%sAction Required:%s Script execution failed after %d attempts.\n" "$Y" "$RS" "$max_attempts"
+        if ! read -r -p "[R]etry, [S]kip, or [A]bort? (r/s/a): " action; then
+            log ERR "Interactive input closed; aborting."
+            exit "$exit_code"
+        fi
+        
+        case "${action,,}" in
+            r|retry)
+                unset 'FAILED_SCRIPTS[-1]'
+                attempt=1 # Reset retry counter on manual operator intervention
+                continue
+                ;;
+            s|skip)
+                log WARN "Skipping. NOT marking as complete."
+                unset 'FAILED_SCRIPTS[-1]'
+                SKIPPED_SCRIPTS+=("$script_name")
+                return 0
+                ;;
+            *)
+                exit "$exit_code"
+                ;;
+        esac
     done
 }
 
@@ -232,7 +275,7 @@ main() {
         esac
     done
 
-    # Pre-flight Checks
+    # Base Safety Checks
     if (( EUID != 0 )); then
         log ERR "This orchestrator must be run as root."
         exit 1
@@ -243,10 +286,29 @@ main() {
         exit 1
     fi
 
-    # Concurrency Guard
+    # Concurrency Guard & Forensic Lock Diagnostics
     exec 9>"$LOCK_FILE"
     if ! flock -n 9; then
         log ERR "Another instance of this orchestrator is already running."
+        
+        local lock_real holders="" fd pid cmdline
+        lock_real="$(readlink -f -- "$LOCK_FILE" 2>/dev/null || printf '%s' "$LOCK_FILE")"
+        
+        for fd in /proc/[0-9]*/fd/*; do
+            [[ -e "$fd" ]] || continue
+            if [[ "$(readlink -f -- "$fd" 2>/dev/null || true)" == "$lock_real" ]]; then
+                pid="${fd#/proc/}"; pid="${pid%%/*}"
+                [[ "$pid" == "$$" ]] && continue # Ignore self
+                cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
+                holders+="  - PID ${pid}: ${cmdline}\n"
+            fi
+        done
+        
+        if [[ -n "$holders" ]]; then
+            printf "\n%sLock is held by the following process(es):%s\n%b\n" "$Y" "$RS" "$holders"
+            printf "You can manually terminate it using: %skill -9 <PID>%s\n" "$HL" "$RS"
+        fi
+        
         exit 1
     fi
 
@@ -264,20 +326,38 @@ main() {
         printf "State file: %s\n\n" "$STATE_FILE"
         
         local i=0 completed_count=0 missing_count=0 status
+        declare -A dryrun_seen_keys=()
+        
         for entry in "${INSTALL_SEQUENCE[@]}"; do
             ((++i))
-            read -r script_name _ <<< "$entry"
+            local raw_command fail_mode ignore_fail=0
+            IFS='|' read -r raw_command fail_mode <<< "$entry"
+            raw_command="${raw_command#"${raw_command%%[![:space:]]*}"}"
+            
+            if [[ -n "$fail_mode" && "${fail_mode,,}" == *"ignore"* ]]; then
+                ignore_fail=1
+            fi
+            
+            local script_name
+            read -r script_name _ <<< "$raw_command"
+            
+            # Key Generation for idempotency
+            (( ++dryrun_seen_keys["$script_name"] ))
+            local state_key="${script_name}|${dryrun_seen_keys["$script_name"]}"
             
             if [[ ! -f "$script_name" ]]; then
                 status="${R}[MISSING]${RS}"
                 ((++missing_count))
-            elif [[ -n "${COMPLETED_SCRIPTS[$script_name]:-}" ]]; then
+            elif [[ -n "${COMPLETED_SCRIPTS[$state_key]:-}" ]]; then
                 status="${G}[DONE]${RS}"
                 ((++completed_count))
             else
                 status="${B}[PENDING]${RS}"
             fi
-            printf "  %3d. %-45s %s\n" "$i" "$entry" "$status"
+            
+            local display_name="$raw_command"
+            (( ignore_fail == 1 )) && display_name+=" (IGN)"
+            printf "  %3d. %-45s %s\n" "$i" "$display_name" "$status"
         done
         
         printf "\n%sSummary:%s\n" "$HL" "$RS"
@@ -295,27 +375,50 @@ main() {
         printf "\n%s%s=== ARCH ORCHESTRATOR (PHASE 1: ISO) ===%s\n\n" "$B" "$HL" "$RS"
     fi
 
-    # Script Existence Validation
+    # --- COMPREHENSIVE PRE-FLIGHT AUDIT ---
+    local missing_audit_count=0
     for entry in "${INSTALL_SEQUENCE[@]}"; do
-        read -r script_name _ <<< "$entry"
+        local raw_command script_name
+        IFS='|' read -r raw_command _ <<< "$entry"
+        raw_command="${raw_command#"${raw_command%%[![:space:]]*}"}"
+        read -r script_name _ <<< "$raw_command"
+
         if [[ ! -f "$script_name" ]]; then
-            log ERR "Missing script: $script_name"
-            exit 1
+            log ERR "Pre-flight check failed: Missing script '$script_name'"
+            ((missing_audit_count++))
         fi
     done
 
+    if (( missing_audit_count > 0 )); then
+        log ERR "Pre-flight audit failed ($missing_audit_count script(s) missing). Aborting to prevent incomplete execution."
+        exit 1
+    else
+        log OK "Pre-flight audit passed. All sequence payloads verified."
+    fi
+
     # --- EXECUTION LOOP ---
     local current=0 total=${#INSTALL_SEQUENCE[@]}
+    declare -A exec_seen_keys=()
+
     for entry in "${INSTALL_SEQUENCE[@]}"; do
         ((++current))
-        read -r script_name _ <<< "$entry"
+
+        # Re-parse purely to get naming for interactive prompt and unique Key
+        local raw_command script_name
+        IFS='|' read -r raw_command _ <<< "$entry"
+        raw_command="${raw_command#"${raw_command%%[![:space:]]*}"}"
+        read -r script_name _ <<< "$raw_command"
+        
+        # Generator for Multi-Occurrence State Keys
+        (( ++exec_seen_keys["$script_name"] ))
+        local state_key="${script_name}|${exec_seen_keys["$script_name"]}"
 
         # Only prompt if NOT completed AND NOT in auto mode
-        if [[ -z "${COMPLETED_SCRIPTS[$script_name]:-}" ]] && (( AUTO_MODE == 0 )); then
+        if [[ -z "${COMPLETED_SCRIPTS[$state_key]:-}" ]] && (( AUTO_MODE == 0 )); then
             local desc
             desc=$(get_script_description "$script_name")
             
-            printf "\n%s>>> NEXT [%d/%d]:%s %s\n" "$Y" "$current" "$total" "$RS" "$entry"
+            printf "\n%s>>> NEXT [%d/%d]:%s %s\n" "$Y" "$current" "$total" "$RS" "$raw_command"
             printf "    %sDescription:%s %s\n" "$B" "$RS" "$desc"
             
             if ! read -r -p "Proceed? [P]roceed, [S]kip, [Q]uit: " confirm; then
@@ -335,7 +438,9 @@ main() {
                     ;;
             esac
         fi
-        execute_script "$entry" "$current" "$total"
+        
+        # Fire Engine
+        execute_script "$entry" "$state_key" "$current" "$total"
     done
 
     print_summary
@@ -343,7 +448,7 @@ main() {
     # --- PHASE TRANSITION BRIDGE (Executes only if Phase 1 succeeded cleanly) ---
     if (( ! IN_CHROOT )); then
         if (( ${#FAILED_SCRIPTS[@]} > 0 || ${#SKIPPED_SCRIPTS[@]} > 0 )); then
-            log WARN "Phase 1 did not complete cleanly; not initiating Phase 2."
+            log WARN "Phase 1 did not complete fully; not initiating Phase 2 boundary crossing."
             return 0
         fi
 
@@ -383,7 +488,7 @@ main() {
         (( AUTO_MODE )) && phase2_args+=(--auto)
         (( RESET_STATE )) && phase2_args+=(--reset)
 
-        # Release the lock BEFORE crossing the boundary to prevent FD inheritance hangs
+        # Release the lock BEFORE crossing the boundary to prevent FD inheritance deadlocks
         exec 9>&-
 
         set +e
@@ -404,7 +509,7 @@ main() {
 
         if [[ -f "$finish_flag" ]]; then
             rm -f "$finish_flag"
-            log OK "Autonomous finish flag detected from 011_exiting_unmounting.sh."
+            log OK "Autonomous finish flag detected from 180_exiting_unmounting.sh."
             log INFO "Unmounting filesystems securely..."
             umount -R "$CHROOT_MNT"
             log OK "All filesystems flushed and unmounted."
