@@ -2820,9 +2820,9 @@ execute_scripts() {
 
         if [[ "$OPT_DRY_RUN" == true ]]; then
             if [[ -n "$quoted_args" ]]; then
-                printf '%s→%s [DRY-RUN] %s %s (%s-mode)\n' "$CLR_BLU" "$CLR_RST" "$script" "$quoted_args" "$mode"
+                printf '%s→%s %s %s [DRY-RUN]\n' "$CLR_BLU" "$CLR_RST" "$script" "$quoted_args"
             else
-                printf '%s→%s [DRY-RUN] %s (%s-mode)\n' "$CLR_BLU" "$CLR_RST" "$script" "$mode"
+                printf '%s→%s %s [DRY-RUN]\n' "$CLR_BLU" "$CLR_RST" "$script"
             fi
             continue
         fi
@@ -2832,6 +2832,9 @@ execute_scripts() {
         else
             printf '%s→%s %s\n' "$CLR_BLU" "$CLR_RST" "$script"
         fi
+
+        local -i auto_retry_limit=3
+        local -i auto_retry_count=0
 
         # The Retry/Skip prompt logic natively integrated into the execution sequence
         while true; do
@@ -2849,6 +2852,13 @@ execute_scripts() {
                 log WARN "$script failed (exit $rc) - ignored via ignore-fail"
                 SOFT_FAILED_SCRIPTS+=("$script")
                 break
+            fi
+
+            if (( auto_retry_count < auto_retry_limit )); then
+                (( ++auto_retry_count ))
+                log WARN "$script failed (exit $rc). Auto-retrying (attempt ${auto_retry_count}/${auto_retry_limit})..."
+                sleep 1
+                continue
             fi
 
             log ERROR "$script failed (exit $rc)"
