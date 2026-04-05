@@ -2434,7 +2434,7 @@ pages:
                 button_text: "Download"
               on_press:
                 type: exec
-                command: kitty --class dusky_wayclick.sh --hold sh -c "$HOME/user_scripts/wayclick/sounds/wayclick_soundpacks_download.sh --auto"
+                command: kitty --class wayclick_soundpacks_download.sh --hold sh -c "$HOME/user_scripts/wayclick/sounds/wayclick_soundpacks_download.sh --auto --force"
                 terminal: false
             - type: button
               properties:
