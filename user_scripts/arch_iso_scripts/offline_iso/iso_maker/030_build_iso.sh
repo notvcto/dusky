@@ -99,7 +99,10 @@ cat << EOF > "$PATCH_FILE"
     rm -f "\${repo_target}/archrepo.files"*
     
     _msg_info ">>> GENERATING MASTER DATABASE INSIDE ISO <<<"
-    # 3. Filter out .sig files and generate the unified database
+    # 3. Filter out .sig files and generate the unified database.
+    #    Save and restore nullglob state so we don't corrupt mkarchiso's own
+    #    glob behaviour if it had the option enabled before entering this function.
+    local _nullglob_state; shopt -q nullglob && _nullglob_state=1 || _nullglob_state=0
     shopt -s nullglob
     local all_files=("\${repo_target}/"*.pkg.tar.*)
     local pkg_files=()
@@ -107,7 +110,7 @@ cat << EOF > "$PATCH_FILE"
         [[ "\$f" == *.sig ]] && continue
         pkg_files+=("\$f")
     done
-    shopt -u nullglob
+    (( _nullglob_state )) || shopt -u nullglob
     
     if (( \${#pkg_files[@]} > 0 )); then
         repo-add -q "\${repo_target}/archrepo.db.tar.gz" "\${pkg_files[@]}"
@@ -132,6 +135,9 @@ if ! grep -q 'INJECTING & MERGING REPOSITORIES DIRECTLY INTO ISO' "$MKARCHISO_CU
     exit 1
 fi
 echo "  -> Patch verified successfully."
+
+# Patch file has been consumed; remove it to keep the workspace clean.
+rm -f "$PATCH_FILE"
 
 # --- 5. ISO GENERATION ---
 echo "  -> Cleaning previous build artifacts..."
