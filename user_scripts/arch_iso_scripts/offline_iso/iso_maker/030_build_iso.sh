@@ -34,11 +34,8 @@ if [[ ! -d "${OFFLINE_REPO_OFFICIAL}" ]]; then
     exit 1
 fi
 
-# Verify the injection point exists in the installed mkarchiso before we touch
-# anything. This catches archiso upgrades that rename or refactor the function.
 if ! grep -q '^_build_iso_image() {' /usr/bin/mkarchiso; then
     echo "[ERR] Could not locate '_build_iso_image() {' in /usr/bin/mkarchiso." >&2
-    echo "[ERR] The archiso package may have been updated and renamed this function." >&2
     exit 1
 fi
 
@@ -49,21 +46,15 @@ echo "  -> Configuring Auto-Start Payload and SSH Access..."
 cat << 'EOF' > "${PROFILE_DIR}/airootfs/root/.automated_script.sh"
 #!/usr/bin/env bash
 
-# ONLY execute this on the primary physical console (tty1).
 if [[ "$(tty)" == "/dev/tty1" ]]; then
-    
-    # 1. Set root password for SSH access
     echo "root:0000" | chpasswd
     echo -e "\e[1;32m[INFO]\e[0m Root password set to 0000. SSH is available."
 
-    # 2. Synchronize with background services (Wait for pacman-init)
     echo -e "\e[1;34m[INFO]\e[0m Waiting for background services to initialize..."
     systemctl is-system-running --wait >/dev/null 2>&1 || true
 
-    # 3. Fix execution permissions stripped by profiledef.sh whitelist
     chmod -R +x /root/arch_install/
 
-    # 4. Clear console and launch orchestrator
     clear
     cd /root/arch_install/
     ./000_dusky_arch_install.sh
@@ -73,27 +64,36 @@ EOF
 chmod +x "${PROFILE_DIR}/airootfs/root/.automated_script.sh"
 
 # --- 4. SKELETON DIRECTORY PAYLOAD (Dotfiles) ---
-echo "  -> Fetching and staging dotfiles payload into /etc/skel..."
+echo "  -> Preparing workspace for dotfiles (Enforcing Idempotency)..."
 SKEL_DIR="${PROFILE_DIR}/airootfs/etc/skel"
+
+# 1. Wipe the existing directory to prevent git 'already exists' fatal errors on rebuilds.
+rm -rf "${SKEL_DIR}"
 mkdir -p "${SKEL_DIR}"
 
-# 1. Clone the bare repository natively into the skeleton dir.
-# When useradd runs post-install, ~/dusky will become their operational bare repo.
+# 2. Wipe previous permission injections to prevent profiledef.sh from bloating indefinitely.
+sed -i '/^# --- DUSKY PERMISSIONS START ---/,/^# --- DUSKY PERMISSIONS END ---/d' "${PROFILE_DIR}/profiledef.sh"
+
+# 3. Resolve Pacman Conflict: grml-zsh-config provides a default .zshrc that fatally 
+# collides with the dusky git checkout. We strip it from the build list.
+echo "  -> Pruning conflicting Archiso baseline packages..."
+sed -i '/^grml-zsh-config$/d' "${PROFILE_DIR}/packages.x86_64" || true
+
+echo "  -> Fetching and staging dotfiles payload into /etc/skel..."
+# 4. Clone the bare repository natively into the skeleton dir.
 git clone --bare --depth 1 "https://github.com/dusklinux/dusky" "${SKEL_DIR}/dusky"
 
-# 2. Force checkout directly into /etc/skel so subdirectories manifest in the ISO.
+# 5. Force checkout directly into /etc/skel so subdirectories manifest in the ISO.
 git --git-dir="${SKEL_DIR}/dusky/" --work-tree="${SKEL_DIR}" checkout -f
 
-# 3. Preserve specific executable permissions dynamically.
+# 6. Preserve specific executable permissions dynamically.
 echo "  -> Locking in executable permissions for /etc/skel scripts..."
-# We prune the internal bare repo so we don't accidentally map git hooks to profiledef.sh
+echo "# --- DUSKY PERMISSIONS START ---" >> "${PROFILE_DIR}/profiledef.sh"
 while IFS= read -r -d '' exec_file; do
-    # Force absolute path formatting for mkarchiso (e.g., /etc/skel/script.sh)
     rel_path="/${exec_file#${PROFILE_DIR}/airootfs/}"
-    
-    # Safely append directly into the file_permissions array in profiledef.sh
     echo "file_permissions+=([\"${rel_path}\"]=\"0:0:0755\")" >> "${PROFILE_DIR}/profiledef.sh"
 done < <(find "${SKEL_DIR}" -path "${SKEL_DIR}/dusky" -prune -o -type f -executable -print0)
+echo "# --- DUSKY PERMISSIONS END ---" >> "${PROFILE_DIR}/profiledef.sh"
 
 
 # --- 5. DYNAMIC MKARCHISO PATCHING (The payload) ---
@@ -107,18 +107,15 @@ cat << EOF > "$PATCH_FILE"
     local repo_target="\${isofs_dir}/\${install_dir}/repo"
     mkdir -p "\${repo_target}"
     
-    # 1. Copy both repositories straight into the ISO's staging area
     cp -a "${OFFLINE_REPO_OFFICIAL}/." "\${repo_target}/"
     if [[ -d "${OFFLINE_REPO_AUR}" ]]; then
         cp -a "${OFFLINE_REPO_AUR}/." "\${repo_target}/"
     fi
     
-    # 2. Clean out the individual databases that were just copied over
     rm -f "\${repo_target}/archrepo.db"*
     rm -f "\${repo_target}/archrepo.files"*
     
     _msg_info ">>> GENERATING MASTER DATABASE INSIDE ISO <<<"
-    # 3. Filter out .sig files and generate the unified database.
     local _nullglob_state; shopt -q nullglob && _nullglob_state=1 || _nullglob_state=0
     shopt -s nullglob
     local all_files=("\${repo_target}/"*.pkg.tar.*)
@@ -144,7 +141,6 @@ sed -i '/^_build_iso_image() {/r '"$PATCH_FILE"'' "$MKARCHISO_CUSTOM"
 
 if ! grep -q 'INJECTING & MERGING REPOSITORIES DIRECTLY INTO ISO' "$MKARCHISO_CUSTOM"; then
     echo "[ERR] Patch was NOT injected — the sed pattern failed to match." >&2
-    echo "[ERR] Inspect $MKARCHISO_CUSTOM to diagnose." >&2
     exit 1
 fi
 echo "  -> Patch verified successfully."
