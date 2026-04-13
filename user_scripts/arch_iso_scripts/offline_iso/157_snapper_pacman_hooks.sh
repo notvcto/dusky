@@ -15,7 +15,7 @@ declare -a ACTIVE_TEMP_FILES=()
 
 cleanup() {
     local f
-    for f in "${ACTIVE_TEMP_FILES[@]}"; do
+    for f in "${ACTIVE_TEMP_FILES[@]}\"; do
         [[ -n "$f" && -f "$f" ]] && rm -f "$f" 2>/dev/null || true
     done
 }
@@ -200,7 +200,6 @@ EOF
     info "Configured dynamic ${target_hook} injection in ${managed_file}"
 }
 
-# --- THE FIX: Rebuild the actual boot image, not just the text menu ---
 rebuild_initramfs() { 
     info "Recompiling early boot images to inject overlayfs hooks..."
     mkinitcpio -P
@@ -266,7 +265,8 @@ configure_snap_pac() {
 }
 
 snapshot_with_description_exists() {
-    snapper --csv -c "$1" list 2>/dev/null | awk -F',' -v desc="$2" '
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus --csv -c "$1" list 2>/dev/null | awk -F',' -v desc="$2" '
         NR == 1 {
             for (i = 1; i <= NF; i++) if ($i == "description") col = i
             next
@@ -277,7 +277,8 @@ snapshot_with_description_exists() {
 }
 
 baseline_snapshot_ids_with_cleanup() {
-    snapper --csv -c "$1" list 2>/dev/null | awk -F',' -v desc="$2" -v cleanup="$3" '
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus --csv -c "$1" list 2>/dev/null | awk -F',' -v desc="$2" -v cleanup="$3" '
         NR == 1 {
             for (i = 1; i <= NF; i++) {
                 if ($i == "number") num_col = i
@@ -307,7 +308,8 @@ ensure_home_snap_pac_snapshot() {
         return 0
     fi
 
-    snapper -c home create -t single -c number -d "snap-pac"
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus -c home create -t single -c number -d "snap-pac"
     info "Created missing home snap-pac snapshot."
 }
 
@@ -320,20 +322,23 @@ create_post_config_baseline_snapshot() {
             [[ -n "$snap_id" ]] || continue
             [[ "$snap_id" =~ ^[0-9]+$ ]] || fatal "Unexpected non-numeric snapshot id parsed for ${cfg}: ${snap_id}"
             [[ "$snap_id" == "0" ]] && continue
-            snapper -c "$cfg" delete "$snap_id"
+            # CHROOT FIX: Inject --no-dbus
+            snapper --no-dbus -c "$cfg" delete "$snap_id"
             info "Removed old important baseline snapshot ${cfg}#${snap_id} so it can be recreated with number cleanup."
         done < <(baseline_snapshot_ids_with_cleanup "$cfg" "$desc" "important")
     done
 
     if ! snapshot_with_description_exists "root" "$desc"; then
-        snapper -c root create -t single -c number -d "$desc"
+        # CHROOT FIX: Inject --no-dbus
+        snapper --no-dbus -c root create -t single -c number -d "$desc"
         info "Created baseline root snapshot."
     else
         info "Baseline root snapshot already exists."
     fi
 
     if ! snapshot_with_description_exists "home" "$desc"; then
-        snapper -c home create -t single -c number -d "$desc"
+        # CHROOT FIX: Inject --no-dbus
+        snapper --no-dbus -c home create -t single -c number -d "$desc"
         info "Created baseline home snapshot."
     else
         info "Baseline home snapshot already exists."

@@ -265,7 +265,8 @@ install_packages() {
 }
 
 verify_snapper_runtime() {
-    snapper --help >/dev/null 2>&1 || fatal "snapper is installed but not runnable. This usually indicates a package/runtime mismatch."
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus --help >/dev/null 2>&1 || fatal "snapper is installed but not runnable. This usually indicates a package/runtime mismatch."
 }
 
 post_install_checks() {
@@ -280,7 +281,8 @@ ensure_snapper_config() {
     local snap_dir="${config_path}/.snapshots"
     snap_dir="${snap_dir//\/\//\/}"
 
-    if snapper -c "$config_name" get-config >/dev/null 2>&1; then
+    # CHROOT FIX: Inject --no-dbus
+    if snapper --no-dbus -c "$config_name" get-config >/dev/null 2>&1; then
         info "Snapper ${config_name} exists."
         return 0
     fi
@@ -300,8 +302,9 @@ ensure_snapper_config() {
         fi
     fi
 
-    snapper -c "$config_name" create-config "$config_path"
-    ROLLBACK_CMDS+=("snapper -c ${config_name} delete-config")
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus -c "$config_name" create-config "$config_path"
+    ROLLBACK_CMDS+=("snapper --no-dbus -c ${config_name} delete-config")
     info "Created Snapper ${config_name} config."
 }
 
@@ -512,11 +515,13 @@ mount_snapshots() {
 }
 
 verify_snapper_works() {
-    snapper -c "$1" list >/dev/null 2>&1 || fatal "Snapper $1 config is broken."
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus -c "$1" list >/dev/null 2>&1 || fatal "Snapper $1 config is broken."
 }
 
 snapper_cleanup_counts() {
-    snapper --csv -c "$1" list 2>/dev/null | awk -F',' '
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus --csv -c "$1" list 2>/dev/null | awk -F',' '
         NR == 1 {
             for (i = 1; i <= NF; i++) {
                 if ($i == "number") num_col = i
@@ -551,7 +556,8 @@ tune_snapper() {
         important_limit=$(( important_count + reserve ))
     fi
 
-    snapper -c "$cfg" set-config \
+    # CHROOT FIX: Inject --no-dbus
+    snapper --no-dbus -c "$cfg" set-config \
         TIMELINE_CREATE="no" \
         NUMBER_CLEANUP="yes" \
         NUMBER_LIMIT="${number_limit}" \
