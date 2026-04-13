@@ -211,7 +211,7 @@ detect_esp_mountpoint() {
         if mountpoint -q "$candidate"; then
             fstype="$(findmnt -M "$candidate" -no FSTYPE 2>/dev/null || true)"
             case "$fstype" in
-                vfat|fat|msdos)
+                vfat|fat|msdos|fat32)
                     CACHE_ESP_PATH="$candidate"
                     printf '%s\n' "$CACHE_ESP_PATH"
                     return 0
@@ -239,10 +239,14 @@ set_shell_var() {
     escaped_value="${escaped_value//&/\\&}"
     escaped_value="${escaped_value//|/\\|}"
     touch "$file"
+    # CHROOT FIX: We intentionally REMOVE the hardcoded quotes around ${escaped_value}.
+    # Naive AUR parsers (like limine-update) fail directory validation if the 
+    # value is surrounded by literal quotes (e.g. "/boot"), which triggers a fallback 
+    # to bootctl, which crashes the script in an arch-chroot environment. 
     if grep -qE "^[[:space:]]*${key}=" "$file"; then
-        sed -i -E "s|^[[:space:]]*${key}=.*|${key}=\"${escaped_value}\"|" "$file"
+        sed -i -E "s|^[[:space:]]*${key}=.*|${key}=${escaped_value}|" "$file"
     else
-        printf '%s="%s"\n' "$key" "$value" | tee -a "$file" >/dev/null
+        printf '%s=%s\n' "$key" "$value" | tee -a "$file" >/dev/null
     fi
 }
 
@@ -606,11 +610,18 @@ configure_limine_defaults() {
             info "Configured ESP_PATH=${esp_target}"
             NEEDS_LIMINE_UPDATE=true
         fi
+    else
+        backup_file "$limine_defaults"
+        set_shell_var "$limine_defaults" ESP_PATH "$esp_target"
+        info "Force-configured ESP_PATH=${esp_target} for chroot environment compatibility."
+        NEEDS_LIMINE_UPDATE=true
     fi
 
     if ! shell_var_key_present "$limine_defaults" BOOT_ORDER; then
         backup_file "$limine_defaults"
-        set_shell_var "$limine_defaults" BOOT_ORDER "*, *lts, *fallback, Snapshots"
+        # We manually inject literal quotes here since the string contains spaces
+        # and set_shell_var no longer adds them automatically.
+        set_shell_var "$limine_defaults" BOOT_ORDER "\"*, *lts, *fallback, Snapshots\""
         info "Configured BOOT_ORDER to prioritize kernels over Snapshots."
         NEEDS_LIMINE_UPDATE=true
     fi

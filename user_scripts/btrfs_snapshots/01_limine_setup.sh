@@ -249,9 +249,9 @@ set_shell_var() {
     escaped_value="${escaped_value//|/\\|}"
     sudo touch "$file"
     if sudo grep -qE "^[[:space:]]*${key}=" "$file"; then
-        sudo sed -i -E "s|^[[:space:]]*${key}=.*|${key}=\"${escaped_value}\"|" "$file"
+        sudo sed -i -E "s|^[[:space:]]*${key}=.*|${key}=${escaped_value}|" "$file"
     else
-        printf '%s="%s"\n' "$key" "$value" | sudo tee -a "$file" >/dev/null
+        printf '%s=%s\n' "$key" "$value" | sudo tee -a "$file" >/dev/null
     fi
 }
 
@@ -663,7 +663,7 @@ configure_limine_defaults() {
 
     if ! shell_var_key_present "$limine_defaults" BOOT_ORDER; then
         backup_file "$limine_defaults"
-        set_shell_var "$limine_defaults" BOOT_ORDER "*, *lts, *fallback, Snapshots"
+        set_shell_var "$limine_defaults" BOOT_ORDER "\"*, *lts, *fallback, Snapshots\""
         info "Configured BOOT_ORDER to prioritize kernels over Snapshots."
         NEEDS_LIMINE_UPDATE=true
     fi
