@@ -10,6 +10,7 @@
 # even if a non-critical component fails.
 
 declare -ra ISO_SEQUENCE=(
+  "010_set_variables.sh"
   "020_environment_prep.sh --auto"
   "030_partitioning.sh"
   "040_disk_mount.sh --auto"
