@@ -246,7 +246,7 @@ EOF
 
 rebuild_initramfs() { 
     info "Recompiling early boot images to inject overlayfs hooks..."
-    sudo mkinitcpio -P
+    sudo mkinitcpio -P < <(echo "n")
     sudo limine-update || true
 }
 
