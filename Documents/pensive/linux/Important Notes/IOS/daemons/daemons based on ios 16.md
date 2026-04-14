@@ -299,7 +299,7 @@ Conservative legend:
 | 288 | neagent-ios                   | Network Extension agent for VPNs/filters                                                     | if-unused                      |
 | 289 | nearbyd                       | Nearby interaction and proximity service                                                     | if-unused                      |
 | 290 | nehelper-embedded             | Network Extension helper service                                                             | if-unused                      |
-| 291 | nesessionmanager              | Manages Network Extension sessions such as VPNs                                              | if-unused                      |
+| 291 | nesessionmanager              | DISABLING CAUSES MASSIVE POWER DRAW                                                          | NO                             |
 | 292 | NetworkLinkConditioner        | Developer network-throttling tool                                                            | yes                            |
 | 293 | networkserviceproxy           | Network proxy service used by Private Relay and related features                             | if-unused                      |
 | 294 | newsd                         | Apple News background service                                                                | if-unused                      |
