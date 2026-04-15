@@ -4,9 +4,9 @@
 # Description: GPU-Accelerated WiFi Security Auditing Tool for Arch/Hyprland
 # Hardware:    NVIDIA RTX 3050 Ti (4GB VRAM) + Intel AX-series Wi-Fi
 # Author:      Elite DevOps
-# Version:     3.1.1 (Production Release)
+# Version:     3.1.4 (Sequential Ultimate Mask Edition)
 # Requires:    Bash 5.0+, NVIDIA CUDA drivers, hcxtools, hashcat
-# Extends:     wifi_audit.sh v3.1.0
+# Extends:     wifi_audit.sh v3.1.3
 # -----------------------------------------------------------------------------
 # PIPELINE:
 #   Phase 1 — Capture:    airodump-ng    → .cap
@@ -53,6 +53,10 @@
 #          4-digit PIN). No wordlist required.
 #      [D] Combination Attack: Glues two wordlists together (e.g., 'admin' + 
 #          'password' = 'adminpassword').
+#      [E] Smart Sequential Brute Force: Uses a dynamic .hcmask file to logically
+#          stage attacks. Exhausts 8-12 pure numbers first, then moves to 
+#          lowercase+numbers, then full alphanumeric, and finally ALL special chars.
+#
 # A) Rule-Based Dictionary Attack (-a 0)
 # 
 #     The Analogy: A bouncer at a club checking a VIP list, but the bouncer is also instructed to check if the person is wearing a fake mustache, a hat, or sunglasses.
@@ -102,6 +106,15 @@
 #         Hashcat tests: RedDog, RedCat, RedBird, BlueDog, BlueCat...
 # 
 #     When to use it: When you suspect the target is using a "passphrase" made up of two distinct dictionary words pasted together.
+#
+# E) Smart Sequential Brute Force (.hcmask file)
+#     
+#     The Analogy: Systematically emptying the entire ocean with a bucket, starting with the shallow water first.
+#     
+#     How it works: Generates a custom maskfile that Hashcat processes strictly sequentially top-to-bottom. It guarantees all numbers up to 12 digits are exhausted before any letter is attempted, and guarantees all letters/numbers are exhausted before special characters are attempted.
+#     
+#     When to use it: When you have zero clues about the password and are willing to leave your laptop running for extended periods.
+#
 # STEP 4: The Handshake Capture (REQUIRES TWO TERMINALS)
 #    - The script will generate an 'airodump-ng' command and copy it to your 
 #      Hyprland clipboard automatically.
@@ -754,7 +767,7 @@ find_rockyou() {
 }
 
 # -----------------------------------------------------------------------------
-# WORDLIST PREPARATION (PATCHED FOR OOM/TMPFS EXHAUSTION & UX)
+# WORDLIST PREPARATION
 # -----------------------------------------------------------------------------
 prepare_wordlist() {
     local attack_type="$1"
@@ -789,7 +802,6 @@ prepare_wordlist() {
                 done
             fi
         else
-            # Native hashcat directory ingestion prevents tmpfs OOM kernel panics
             log_success "Found ${#list_files[@]} list(s). Passing directory to hashcat natively."
             FINAL_WORDLIST="$LIST_DIR"
         fi
@@ -1068,15 +1080,19 @@ select_attack_vector() {
     printf '   (-a 1, two wordlists concatenated)\n'                       >&2
     printf '   Best for: compound passphrases (wordword patterns)\n'       >&2
     printf '\n'                                                              >&2
+    printf 'E) Smart Sequential Brute Force (8-12 chars)\n'                >&2
+    printf '   (Numbers first, then Lowercase+Num, Alphanumeric, then All/Special)\n'   >&2
+    printf '   Uses dynamic .hcmask files for intelligent staging.\n'      >&2
+    printf '\n'                                                              >&2
 
     local vector
     while true; do
-        read -r -p "Select attack vector [A/B/C/D] (Default: A): " vector
+        read -r -p "Select attack vector [A/B/C/D/E] (Default: A): " vector
         vector="${vector:-A}"
         vector="${vector^^}"
         case "$vector" in
-            A|B|C|D) break ;;
-            *) printf 'Invalid selection. Choose A, B, C, or D.\n' >&2 ;;
+            A|B|C|D|E) break ;;
+            *) printf 'Invalid selection. Choose A, B, C, D, or E.\n' >&2 ;;
         esac
     done
 
@@ -1204,6 +1220,39 @@ run_hashcat() {
 
             attack_flags=("-a" "1" "$HC22000_FILE" "$FINAL_WORDLIST" "$second_wl")
             attack_description="Combination: $(basename "${FINAL_WORDLIST}") × $(basename "${second_wl}")"
+            ;;
+            
+        E)
+            local mask_file="$TMP_DIR/smart_sequential.hcmask"
+            # Generating the mask file dynamically to stage the attack perfectly
+            cat << 'EOF' > "$mask_file"
+# Stage 1: Pure Digits (8 to 12 chars)
+?d?d?d?d?d?d?d?d
+?d?d?d?d?d?d?d?d?d
+?d?d?d?d?d?d?d?d?d?d
+?d?d?d?d?d?d?d?d?d?d?d
+?d?d?d?d?d?d?d?d?d?d?d?d
+# Stage 2: Lowercase + Digits (8 to 12 chars)
+?l?d,?1?1?1?1?1?1?1?1
+?l?d,?1?1?1?1?1?1?1?1?1
+?l?d,?1?1?1?1?1?1?1?1?1?1
+?l?d,?1?1?1?1?1?1?1?1?1?1?1
+?l?d,?1?1?1?1?1?1?1?1?1?1?1?1
+# Stage 3: Upper + Lower + Digits (8 to 12 chars)
+?l?u?d,?1?1?1?1?1?1?1?1
+?l?u?d,?1?1?1?1?1?1?1?1?1
+?l?u?d,?1?1?1?1?1?1?1?1?1?1
+?l?u?d,?1?1?1?1?1?1?1?1?1?1?1
+?l?u?d,?1?1?1?1?1?1?1?1?1?1?1?1
+# Stage 4: Everything (Alphanumeric + Special Characters) (8 to 12 chars)
+?a?a?a?a?a?a?a?a
+?a?a?a?a?a?a?a?a?a
+?a?a?a?a?a?a?a?a?a?a
+?a?a?a?a?a?a?a?a?a?a?a
+?a?a?a?a?a?a?a?a?a?a?a?a
+EOF
+            attack_flags=("-a" "3" "$HC22000_FILE" "$mask_file")
+            attack_description="Smart Sequential Brute Force (Mask File Strategy)"
             ;;
     esac
 
@@ -1362,7 +1411,7 @@ attack_wpa_handshake_gpu() {
         if [[ "$attack_vector" == "A" || "$attack_vector" == "D" ]]; then
             log_warn "No valid wordlist/directory available. Dictionary and Combination attacks disabled."
         fi
-        log_info "Mask attacks (B, C) do not require a wordlist."
+        log_info "Mask attacks (B, C, E) do not require a wordlist."
     fi
 
     while true; do
@@ -1623,7 +1672,7 @@ main() {
     printf '   Arch/Hyprland Wi-Fi Security Audit\n'
     printf '   GPU-Accelerated Pipeline Edition\n'
     printf '==============================================\n'
-    printf 'Version: 3.1.1 | PID: %d\n' "$$"
+    printf 'Version: 3.1.4 | PID: %d\n' "$$"
     printf '\n'
 
     check_deps

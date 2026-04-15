@@ -29,7 +29,7 @@ shopt -s extglob
 # ▼ USER CONFIGURATION (EDIT THIS SECTION) ▼
 # =============================================================================
 
-declare -r APP_TITLE="Dusky Service Manager"
+declare -r APP_TITLE="Dusky Services"
 declare -r APP_VERSION="v3.0.0"
 
 # Dimensions & Layout
