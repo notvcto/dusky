@@ -53,7 +53,7 @@ declare -ar pkgs_filesystem=(
 
 # Group 7: Network & Internet
 declare -ar pkgs_network=(
-  "networkmanager" "wireless-regdb" "iwd" "nm-connection-editor" "inetutils" "wget" "curl" "openssh" "firewalld" "vsftpd" "reflector" "bmon" "ethtool" "httrack" "wavemon" "firefox" "network-manager-applet" "nss-mdns" "dnsmasq" "modemmanager" "usb_modeswitch"
+  "networkmanager" "wireless-regdb" "iwd" "nm-connection-editor" "inetutils" "wget" "curl" "openssh" "firewalld" "vsftpd" "reflector" "bmon" "ethtool" "httrack" "wavemon" "firefox" "nss-mdns" "dnsmasq" "modemmanager" "usb_modeswitch"
 )
 
 # Group 8: Terminal & Shell
