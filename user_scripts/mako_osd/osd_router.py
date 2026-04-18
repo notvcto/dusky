@@ -32,7 +32,6 @@ async def _safe_notify(icon: str, title: str) -> None:
         "-h", f"string:x-canonical-private-synchronous:{SYNC_ID}", 
         "-i", icon, title
     )
-    # Await completion in a detached task to prevent blocking the event loop
     wait_task = asyncio.create_task(process.wait())
     _active_tasks.add(wait_task)
     wait_task.add_done_callback(_active_tasks.discard)
@@ -41,8 +40,7 @@ async def _safe_notify(icon: str, title: str) -> None:
 async def trigger_router(action: str, step: str = "10") -> None:
     """
     Dispatches the stateless bash router script with active debouncing.
-    Drops identical rapid-repeat (EV_KEY value=2) events if a subprocess 
-    for this exact action is already executing.
+    Drops identical rapid-repeat events if a subprocess is already executing.
     """
     if action in _active_actions:
         return
@@ -55,20 +53,45 @@ async def trigger_router(action: str, step: str = "10") -> None:
 
 
 def dispatch_notification(icon: str, title: str) -> None:
-    """
-    Spawns the notification task and registers a strong reference to prevent 
-    the Python event loop from garbage collecting it while pending.
-    """
+    """Spawns notification task and registers a strong reference."""
     task = asyncio.create_task(_safe_notify(icon, title))
     _active_tasks.add(task)
     task.add_done_callback(_active_tasks.discard)
 
 
+async def monitor_upower_dbus() -> None:
+    """
+    Listens to UPower D-Bus signals for autonomous KbdBacklight changes.
+    Catches Asus/Mac laptops that bypass evdev entirely for hardware-managed keys.
+    """
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "gdbus", "monitor", "--system", 
+            "--dest", "org.freedesktop.UPower", 
+            "--object-path", "/org/freedesktop/UPower/KbdBacklight",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            
+            decoded_line = line.decode('utf-8', errors='ignore')
+            if "BrightnessChanged" in decoded_line:
+                task = asyncio.create_task(trigger_router("--kbd-bright-show"))
+                _active_tasks.add(task)
+                task.add_done_callback(_active_tasks.discard)
+                
+    except Exception as e:
+        logging.error(f"UPower DBus monitor failed: {e}")
+
+
 async def monitor_device(dev_path: str) -> None:
     """
-    Monitors a specific evdev device node.
-    SWAYOSD LESSON: We no longer filter by capabilities beforehand. Virtual ACPI/WMI 
-    devices frequently emit EV_KEY backlight events without advertising them to the kernel.
+    Monitors a specific evdev device node. Virtual ACPI/WMI devices frequently 
+    emit EV_KEY backlight events without advertising them, so we skip capability filtering.
     """
     if dev_path in _monitored_devices:
         return
@@ -98,16 +121,12 @@ async def monitor_device(dev_path: str) -> None:
                     task = asyncio.create_task(trigger_router("--kbd-bright-down"))
                     _active_tasks.add(task)
                     task.add_done_callback(_active_tasks.discard)
-                # Borrowed from SwayOSD: Many laptops send TOGGLE instead of UP/DOWN
                 elif event.code == ecodes.KEY_KBDILLUMTOGGLE:
-                    # If your keyboard has a single cycle button, you can map this to up/down
-                    # or have it trigger a bash argument like --kbd-bright-toggle
                     task = asyncio.create_task(trigger_router("--kbd-bright-up"))
                     _active_tasks.add(task)
                     task.add_done_callback(_active_tasks.discard)
                     
     except (OSError, PermissionError):
-        # Gracefully handle devices disconnecting or permission drops dynamically
         pass
     except Exception as e:
         logging.error(f"Unexpected failure on device {dev_path}: {e}", exc_info=True)
@@ -126,20 +145,25 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[pyudev.Device] = asyncio.Queue()
     
-    # Filter spurious epoll wakeups natively before queue ingestion using the walrus operator
+    # Filter spurious epoll wakeups natively before queue ingestion
     loop.add_reader(
         monitor.fileno(), 
         lambda: (dev := monitor.poll()) is not None and queue.put_nowait(dev)
     )
 
-    # 1. Enumerate and attach to currently connected devices
+    # Start the UPower D-Bus Monitor for autonomous hardware key routing
+    upower_task = asyncio.create_task(monitor_upower_dbus())
+    _active_tasks.add(upower_task)
+    upower_task.add_done_callback(_active_tasks.discard)
+
+    # Enumerate and attach to currently connected evdev devices
     for device in context.list_devices(subsystem='input'):
         if device.device_node:
             task = asyncio.create_task(monitor_device(device.device_node))
             _active_tasks.add(task)
             task.add_done_callback(_active_tasks.discard)
 
-    # 2. Maintain daemon lifecycle independently to prevent cascading failures
+    # Maintain daemon lifecycle independently
     while True:
         device = await queue.get()
         if device and device.action == 'add' and device.device_node:
@@ -152,5 +176,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        # Catch standard interrupt for clean daemon termination without tracebacks
         pass

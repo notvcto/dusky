@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Hyprland Native OSD Router - Stateless IPC Edition
 # Optimized for Bash 5.3.9+ and Wayland/UWSM environments
-# Note: Hardware lock keys (Caps/Num) are handled by the dedicated evdev Python daemon.
 
 SYNC_ID="sys-osd"
 
@@ -89,11 +88,9 @@ main() {
             ;;
 
         --kbd-bright-up|--kbd-bright-down)
-            # Dynamically extract the exact device name (e.g., asus::kbd_backlight) for any OEM
             local kbd_dev
             kbd_dev=$(brightnessctl -l | awk -F"'" '/kbd_backlight/ {print $2; exit}')
 
-            # Failsafe if run on a desktop without a backlit keyboard
             if [[ -z "$kbd_dev" ]]; then
                 notify "dialog-error" "No Kbd Backlight Found" ""
                 exit 1
@@ -105,11 +102,24 @@ main() {
                 brightnessctl --device="$kbd_dev" set "${step}%-" -q
             fi
 
-            # Fetch the new value using the extracted device name
             local kbd_bright
             kbd_bright=$(brightnessctl --device="$kbd_dev" -m 2>/dev/null | awk -F, '{print int($4)}')
+            [[ -z "$kbd_bright" ]] && kbd_bright=0
 
-            # Final failsafe
+            notify "keyboard-brightness" "Kbd Brightness: ${kbd_bright}%" "$kbd_bright"
+            ;;
+
+        --kbd-bright-show)
+            # Executed when hardware changes brightness autonomously (caught via UPower D-Bus)
+            local kbd_dev
+            kbd_dev=$(brightnessctl -l | awk -F"'" '/kbd_backlight/ {print $2; exit}')
+            
+            if [[ -z "$kbd_dev" ]]; then
+                exit 0
+            fi
+
+            local kbd_bright
+            kbd_bright=$(brightnessctl --device="$kbd_dev" -m 2>/dev/null | awk -F, '{print int($4)}')
             [[ -z "$kbd_bright" ]] && kbd_bright=0
 
             notify "keyboard-brightness" "Kbd Brightness: ${kbd_bright}%" "$kbd_bright"
@@ -119,7 +129,6 @@ main() {
             local old_trackid
             old_trackid=$(playerctl metadata mpris:trackid 2>/dev/null)
 
-            # Execute MPRIS command
             case "$action" in
                 --play-pause) playerctl play-pause ;;
                 --next)       playerctl next ;;
@@ -133,7 +142,6 @@ main() {
                 status=$(playerctl status 2>/dev/null)
                 new_trackid=$(playerctl metadata mpris:trackid 2>/dev/null)
                 
-                # Exit loop immediately if the MPRIS bus state has physically mutated
                 if [[ "$new_trackid" != "$old_trackid" ]] || \
                    [[ "$action" == "--play-pause" && -n "$status" ]] || \
                    [[ "$action" == "--stop" && "$status" == "Stopped" ]]; then
@@ -144,8 +152,6 @@ main() {
             done
             
             metadata=$(playerctl metadata --format "{{ artist }} - {{ title }}" 2>/dev/null)
-            
-            # Fallback if metadata is missing or empty
             [[ -z "$metadata" || "$metadata" == " - " ]] && metadata="Unknown Track"
 
             if [[ "$status" == "Playing" ]]; then
@@ -166,7 +172,7 @@ main() {
             ;;
 
         *)
-            echo "Usage: $0 {--vol-up|--vol-down|--vol-mute|--mic-mute|--bright-up|--bright-down|--kbd-bright-up|--kbd-bright-down|--play-pause|--next|--prev|--stop} [step_value]"
+            echo "Usage: $0 {--vol-up|--vol-down|--vol-mute|--mic-mute|--bright-up|--bright-down|--kbd-bright-up|--kbd-bright-down|--kbd-bright-show|--play-pause|--next|--prev|--stop} [step_value]"
             exit 1
             ;;
     esac
