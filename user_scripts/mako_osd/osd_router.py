@@ -66,10 +66,10 @@ def dispatch_notification(icon: str, title: str) -> None:
 
 async def monitor_device(dev_path: str) -> None:
     """
-    Monitors a specific evdev device node for LED state changes and ACPI keys.
-    Ensures file descriptors are strictly managed and closed.
+    Monitors a specific evdev device node.
+    SWAYOSD LESSON: We no longer filter by capabilities beforehand. Virtual ACPI/WMI 
+    devices frequently emit EV_KEY backlight events without advertising them to the kernel.
     """
-    # Concurrency Guard: Prevent duplicate monitoring of the same node
     if dev_path in _monitored_devices:
         return
     _monitored_devices.add(dev_path)
@@ -77,17 +77,6 @@ async def monitor_device(dev_path: str) -> None:
     device = None
     try:
         device = InputDevice(dev_path)
-        caps = device.capabilities()
-        
-        # Determine if this device has Lock LEDs or Keyboard Illumination Keys
-        has_led = ecodes.EV_LED in caps
-        has_kbd_keys = ecodes.EV_KEY in caps and (
-            ecodes.KEY_KBDILLUMUP in caps[ecodes.EV_KEY] or 
-            ecodes.KEY_KBDILLUMDOWN in caps[ecodes.EV_KEY]
-        )
-        
-        if not (has_led or has_kbd_keys):
-            return
 
         async for event in device.async_read_loop():
             # 1. Handle Stateful Hardware LEDs (Lock Keys)
@@ -99,8 +88,7 @@ async def monitor_device(dev_path: str) -> None:
                     state = "ON" if event.value == 1 else "OFF"
                     dispatch_notification(f"num-lock-{state.lower()}", f"Num Lock: {state}")
             
-            # 2. Handle ACPI/Hardware Keys that bypass Wayland (Keyboard Backlight)
-            # value 1 means KeyDown, value 2 means KeyRepeat (holding the key)
+            # 2. Handle ACPI/Hardware Keys (Keyboard Backlight)
             elif event.type == ecodes.EV_KEY and event.value in (1, 2): 
                 if event.code == ecodes.KEY_KBDILLUMUP:
                     task = asyncio.create_task(trigger_router("--kbd-bright-up"))
@@ -110,15 +98,20 @@ async def monitor_device(dev_path: str) -> None:
                     task = asyncio.create_task(trigger_router("--kbd-bright-down"))
                     _active_tasks.add(task)
                     task.add_done_callback(_active_tasks.discard)
+                # Borrowed from SwayOSD: Many laptops send TOGGLE instead of UP/DOWN
+                elif event.code == ecodes.KEY_KBDILLUMTOGGLE:
+                    # If your keyboard has a single cycle button, you can map this to up/down
+                    # or have it trigger a bash argument like --kbd-bright-toggle
+                    task = asyncio.create_task(trigger_router("--kbd-bright-up"))
+                    _active_tasks.add(task)
+                    task.add_done_callback(_active_tasks.discard)
                     
     except (OSError, PermissionError):
-        # Expected behavior: Gracefully handle devices disconnecting or permission drops dynamically
+        # Gracefully handle devices disconnecting or permission drops dynamically
         pass
     except Exception as e:
-        # Log the traceback but do not crash the daemon
         logging.error(f"Unexpected failure on device {dev_path}: {e}", exc_info=True)
     finally:
-        # Guarantee file descriptor closure and release the concurrency lock
         _monitored_devices.discard(dev_path)
         if device is not None:
             device.close()
