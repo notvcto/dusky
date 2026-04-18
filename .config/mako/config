@@ -91,3 +91,12 @@ format=<b>%s</b>\n%b
 # [urgency=high]
 # border-color={{colors.error_container.default.hex}}
 # text-color={{colors.error.default.hex}}
+#
+# ======================================
+# OSD HARDWARE OVERLAY
+# ======================================
+[app-name=OSD]
+anchor=bottom-center
+# Optional: You can also strip the border or adjust margins specifically for the OSD here
+border-size=0
+margin=0,0,50,0
