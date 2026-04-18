@@ -20,3 +20,22 @@ on-notify=none
 # Solid, intense border and text for critical alerts
 border-color={{colors.error_container.default.hex}}
 text-color={{colors.error.default.hex}}
+
+# ======================================
+# OSD HARDWARE OVERLAY
+# ======================================
+[app-name=OSD]
+anchor=bottom-center
+# Margin: Top, Right, Bottom, Left. Lifts the OSD off the bottom edge.
+margin=0,0,80,0
+
+# -- Contrast Override --
+# Forces a distinct, high-contrast palette specifically for the hardware overlay
+# so text remains legible against both the background and the progress fill.
+background-color={{colors.surface.default.hex}}cc
+progress-color={{colors.primary_container.default.hex}}
+text-color={{colors.on_surface.default.hex}}
+
+# Optional: Gives the OSD a slightly more defined border to stand out
+border-size=3
+border-color={{colors.primary.default.hex}}
