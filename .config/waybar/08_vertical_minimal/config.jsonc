@@ -15,9 +15,8 @@
     // MODULE LAYOUT
     // ===================================================================
     "modules-left": [ 
-        "clock", 
-        //"group/stats",
-        "custom/notification"
+        "clock"
+        //"group/stats"
     ],
     
     "modules-center": [ 
@@ -49,6 +48,7 @@
     },
 
     "cpu": {
+        "justify": "center",
         "format": "\n{usage}",
         "interval": 2,
         "on-click": "uwsm-app -- kitty --class htop -e htop",
@@ -59,6 +59,7 @@
     },
 
     "memory": {
+        "justify": "center",
         "format": "\n{percentage}",
         "interval": 2,
         "on-click": "uwsm-app -- kitty --class io_monitor.sh -e $HOME/user_scripts/drives/io_monitor.sh",
@@ -69,6 +70,7 @@
     },
 
     "temperature": {
+        "justify": "center",
         "thermal-zone": 6,
         "format": "\n{temperatureC}",
         "critical-threshold": 80,
@@ -77,38 +79,19 @@
     },
 
     "clock": {
+        "justify": "center",
         "format": "{:%I\n%M}",
         "tooltip-format": "{:%A, %d %B %Y}",
         "on-click": "uwsm-app -- gnome-clocks",
         "interval": 60
     },
 
-    "custom/notification": {
-        "format": "{icon}",
-        "format-icons": {
-            "notification": "<span foreground='red'><sup></sup></span>",
-            "none": "",
-            "dnd-notification": "<span foreground='red'><sup></sup></span>",
-            "dnd-none": "",
-            "inhibited-notification": "<span foreground='red'><sup></sup></span>",
-            "inhibited-none": "",
-            "dnd-inhibited-notification": "<span foreground='red'><sup></sup></span>",
-            "dnd-inhibited-none": ""
-        },
-        "return-type": "json",
-        "exec-if": "which makoctl",
-        "exec": "~/user_scripts/waybar/mako.sh --vertical",
-        "on-click": "~/user_scripts/rofi/rofi_mako.sh",
-        "on-click-right": "makoctl mode -t do-not-disturb && pkill -RTMIN+8 waybar",
-        "signal": 8,
-        "escape": true
-    },
-
     // --- UPDATED MODULES WITH NUMBERS ---
 
     "pulseaudio": {
         // Stacked: Icon on top, Volume % below
-        "format": "{icon} ",
+        "justify": "center",
+        "format": "{icon}\n{volume}",
         "format-muted": "󰖁",
         "on-click": "uwsm-app -- pavucontrol",
         "format-icons": ["", "", ""],
@@ -117,7 +100,8 @@
 
     "battery": {
         // Stacked: Icon on top, Capacity % below
-        "format": " {icon}\n{capacity}",
+        "justify": "center",
+        "format": "{icon}\n{capacity}",
         "format-charging": "\n{capacity}",
         "format-icons": ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
         "interval": 5,
@@ -125,6 +109,7 @@
     },
 
     "custom/network": {
+        "justify": "center",
         "return-type": "json",
         "exec": "$HOME/user_scripts/waybar/network/network_meter_calling.sh --vertical",
         "interval": 1,
@@ -134,6 +119,7 @@
     },
 
     "custom/power": {
+        "justify": "center",
         "format": "",
         "tooltip": false,
         "on-click": "uwsm-app -- ~/user_scripts/wlogout/wlogout_scale.sh"
