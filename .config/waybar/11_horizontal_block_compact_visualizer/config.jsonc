@@ -77,14 +77,12 @@
     "escape": true
   },
 
-  "custom/updates": {
-    "format": "{}",
-    "exec": "~/user_scripts/waybar/update_counter.sh --pacman --aur --dusky",
+"custom/updates": {
+    "exec": "tail -F ~/.config/dusky/settings/waybar_update_counter_h 2>/dev/null",
     "return-type": "json",
-    "interval": 7200,
-    "on-click": "kitty sh -c 'command -v yay >/dev/null && yay || paru'",
-    "escape": true
-  },
+    "format": "{}",
+    "tooltip": true
+},
 
   "custom/notification": {
     "format": "{icon}",
