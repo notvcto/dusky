@@ -122,8 +122,9 @@ main() {
             ;;
 
         --play-pause|--next|--prev|--stop)
-            local old_meta
+            local old_meta old_status
             old_meta=$(playerctl metadata --format "{{ artist }} - {{ title }}" 2>/dev/null)
+            old_status=$(playerctl status 2>/dev/null)
 
             case "$action" in
                 --play-pause) playerctl play-pause ;;
@@ -138,11 +139,19 @@ main() {
                 status=$(playerctl status 2>/dev/null)
                 metadata=$(playerctl metadata --format "{{ artist }} - {{ title }}" 2>/dev/null)
                 
-                if [[ "$metadata" != "$old_meta" ]] || \
-                   [[ "$action" == "--play-pause" && -n "$status" ]] || \
-                   [[ "$action" == "--stop" && "$status" == "Stopped" ]]; then
-                    break
-                fi
+                # Strict state-transition validation
+                case "$action" in
+                    --play-pause)
+                        [[ "$status" != "$old_status" && -n "$status" ]] && break
+                        ;;
+                    --next|--prev)
+                        [[ "$metadata" != "$old_meta" ]] && break
+                        ;;
+                    --stop)
+                        [[ "$status" == "Stopped" || -z "$status" ]] && break
+                        ;;
+                esac
+                
                 read -r -t 0.01 <> <(:)
             done
             
@@ -154,7 +163,7 @@ main() {
             elif [[ "$status" == "Paused" ]]; then
                 icon="media-playback-pause"
                 title="Paused: $metadata"
-            elif [[ "$status" == "Stopped" ]]; then
+            elif [[ "$status" == "Stopped" || -z "$status" ]]; then
                 icon="media-playback-stop"
                 title="Stopped"
             else
