@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #==============================================================================
 # Hyprland Visuals Controller (Blur, Shadow, Opacity)
-# Architecture: Zero-Corruption Atomic Writes, Symlink Safe, Regex Parsing
+# Architecture: Zero-Corruption Atomic Writes, Symlink Safe, Regex Parsing,
+#               Modular UI Integration (Mako, Rofi, Waybar-ready)
 #==============================================================================
 
 # Strict mode: exit on error, undefined vars, and pipeline failures
@@ -17,16 +18,21 @@ readonly STATE_FILE="${HOME}/.config/dusky/settings/opacity_blur"
 readonly MAKO_TEMPLATE="${HOME}/.config/matugen/templates/mako"
 readonly MAKO_GENERATED="${HOME}/.config/matugen/generated/mako-colors"
 
+# Rofi Targets
+readonly ROFI_TEMPLATE="${HOME}/.config/matugen/templates/rofi-colors.rasi"
+readonly ROFI_GENERATED="${HOME}/.config/matugen/generated/rofi-colors.rasi"
+
 # Visual Constants
 readonly OP_ACTIVE_ON="0.8"
 readonly OP_INACTIVE_ON="0.6"
 readonly OP_ACTIVE_OFF="1.0"
 readonly OP_INACTIVE_OFF="1.0"
 
-# Mako Alpha Constants (Hex)
-# When Blur is ON, Mako drops to 03 (transparent). When Blur is OFF, Mako handles opacity at cc (80%).
-readonly MAKO_ALPHA_ON="03"
-readonly MAKO_ALPHA_OFF="cc"
+# UI Component Alpha Constants (Hex)
+# When Blur is ON, UI components drop to 03 (highly transparent).
+# When Blur is OFF, UI components are ff (100% opaque).
+readonly UI_ALPHA_ON="03"
+readonly UI_ALPHA_OFF="ff"
 
 # --- Global State for Signal Trapping ---
 declare -a TEMP_FILES_TO_CLEAN=()
@@ -123,7 +129,7 @@ show_help() {
 Usage: ${0##*/} [OPTION]
 
 Control Hyprland visual effects (blur, shadow, opacity).
-Includes atomic, symlink-safe configuration writes.
+Includes atomic, symlink-safe configuration writes for UI targets.
 
 Options:
   on, enable, 1, true     Enable blur, shadow, and transparency
@@ -164,20 +170,20 @@ esac
 
 # --- Define Values Based on Target State ---
 
-declare NEW_ENABLED NEW_ACTIVE NEW_INACTIVE NEW_MAKO_ALPHA NOTIFY_MSG STATE_STRING
+declare NEW_ENABLED NEW_ACTIVE NEW_INACTIVE NEW_UI_ALPHA NOTIFY_MSG STATE_STRING
 
 if [[ "$TARGET_STATE" == "on" ]]; then
     NEW_ENABLED="true"
     NEW_ACTIVE="$OP_ACTIVE_ON"
     NEW_INACTIVE="$OP_INACTIVE_ON"
-    NEW_MAKO_ALPHA="$MAKO_ALPHA_ON"
+    NEW_UI_ALPHA="$UI_ALPHA_ON"
     NOTIFY_MSG="Visuals: Max (Blur/Shadow ON)"
     STATE_STRING="True"
 else
     NEW_ENABLED="false"
     NEW_ACTIVE="$OP_ACTIVE_OFF"
     NEW_INACTIVE="$OP_INACTIVE_OFF"
-    NEW_MAKO_ALPHA="$MAKO_ALPHA_OFF"
+    NEW_UI_ALPHA="$UI_ALPHA_OFF"
     NOTIFY_MSG="Visuals: Performance (Blur/Shadow OFF)"
     STATE_STRING="False"
 fi
@@ -189,22 +195,42 @@ printf '%s' "$STATE_STRING" > "$STATE_FILE"
 
 # --- Update Config Files (Using Atomic Pipeline) ---
 
-# Update Hyprland Config
+# 1. Update Hyprland Config
 atomic_sed "$CONFIG_FILE" \
     -e "/^[[:space:]]*blur[[:space:]]*{/,/}/ s/\(enabled[[:space:]]*=[[:space:]]*\)[a-z][a-z]*/\1${NEW_ENABLED}/" \
     -e "/^[[:space:]]*shadow[[:space:]]*{/,/}/ s/\(enabled[[:space:]]*=[[:space:]]*\)[a-z][a-z]*/\1${NEW_ENABLED}/" \
     -e "s/^\([[:space:]]*active_opacity[[:space:]]*=[[:space:]]*\)[0-9][0-9.]*/\1${NEW_ACTIVE}/" \
     -e "s/^\([[:space:]]*inactive_opacity[[:space:]]*=[[:space:]]*\)[0-9][0-9.]*/\1${NEW_INACTIVE}/"
 
-# Update Mako Template (Strict regex for {{variable}}aa)
+
+# 2. Update Dynamic UI Targets
+# Architecture Hook: Append new components (e.g., Waybar, SwayOSD) below using the established pattern.
+
+# --- Mako ---
+# Strict regex for {{variable}}aa and #RRGGBBaa
 if [[ -w "$MAKO_TEMPLATE" ]]; then
-    atomic_sed "$MAKO_TEMPLATE" "s/^\([[:space:]]*background-color={{[^}]*}}\)[0-9a-fA-F]\{2\}/\1${NEW_MAKO_ALPHA}/"
+    atomic_sed "$MAKO_TEMPLATE" "s/^\([[:space:]]*background-color={{[^}]*}}\)[0-9a-fA-F]\{2\}/\1${NEW_UI_ALPHA}/"
+fi
+if [[ -w "$MAKO_GENERATED" ]]; then
+    atomic_sed "$MAKO_GENERATED" "s/^\([[:space:]]*background-color=#[0-9a-fA-F]\{6\}\)[0-9a-fA-F]\{2\}/\1${NEW_UI_ALPHA}/"
 fi
 
-# Update Mako Generated Config (Strict regex for #RRGGBBaa)
-if [[ -w "$MAKO_GENERATED" ]]; then
-    atomic_sed "$MAKO_GENERATED" "s/^\([[:space:]]*background-color=#[0-9a-fA-F]\{6\}\)[0-9a-fA-F]\{2\}/\1${NEW_MAKO_ALPHA}/"
+# --- Rofi ---
+# Strict regex targeting "surface: {{variable}}aa;" and "surface: #RRGGBBaa;"
+if [[ -w "$ROFI_TEMPLATE" ]]; then
+    atomic_sed "$ROFI_TEMPLATE" "s/^\([[:space:]]*surface[[:space:]]*:[[:space:]]*{{[^}]*}}\)[0-9a-fA-F]\{2\};/\1${NEW_UI_ALPHA};/"
 fi
+if [[ -w "$ROFI_GENERATED" ]]; then
+    atomic_sed "$ROFI_GENERATED" "s/^\([[:space:]]*surface[[:space:]]*:[[:space:]]*#[0-9a-fA-F]\{6\}\)[0-9a-fA-F]\{2\};/\1${NEW_UI_ALPHA};/"
+fi
+
+# --- Waybar (Future Extension Example) ---
+# readonly WAYBAR_STYLE="${HOME}/.config/waybar/style.css"
+# if [[ -w "$WAYBAR_STYLE" ]]; then
+#    # Example regex targeting a background hex code
+#    atomic_sed "$WAYBAR_STYLE" "s/\(background-color:[[:space:]]*#[0-9a-fA-F]\{6\}\)[0-9a-fA-F]\{2\};/\1${NEW_UI_ALPHA};/"
+# fi
+
 
 # --- Apply Changes at Runtime ---
 
@@ -227,10 +253,14 @@ if ((hypr_errors > 0)); then
     printf 'Warning: %d hyprctl command(s) failed. Is Hyprland running?\n' "$hypr_errors" >&2
 fi
 
-# Reload Mako dynamically
+# Reload dynamic daemons
 if command -v makoctl &>/dev/null; then
     makoctl reload &>/dev/null || printf 'Warning: makoctl reload failed.\n' >&2
 fi
+
+# Note: Rofi reads config strictly on execution, so no daemon reload is needed.
+# Waybar reload command (for future use):
+# pkill -SIGUSR2 waybar || true
 
 # --- User Feedback ---
 
