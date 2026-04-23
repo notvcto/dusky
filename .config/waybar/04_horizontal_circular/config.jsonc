@@ -151,6 +151,7 @@
     "pulseaudio": {
         "format": "{icon} {volume}%",
         "format-muted": "󰝟",
+        "tooltip-format": "{desc}\nVolume: {volume}%\n\n LMB  Pavucontrol\n MMB  Mute Toggle\n RMB  Cava",
         "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
         "on-click": "uwsm-app -- pavucontrol",
         "on-click-right": "uwsm-app -- kitty --class cava -e cava",
