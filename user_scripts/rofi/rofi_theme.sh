@@ -13,7 +13,7 @@ set -Eeuo pipefail
 shopt -s inherit_errexit
 
 # --- CONFIGURATION ---
-readonly THEME_CTL="dusky-theme-ctl"
+readonly THEME_CTL="${HOME}/user_scripts/theme_matugen/theme_ctl.sh"
 readonly APP_NAME="matugen-menu"
 readonly ROFI_THEME_STR='window { width: 400px; }'
 
@@ -145,7 +145,7 @@ require_commands() {
 }
 
 validate_controller() {
-    command -v "$THEME_CTL" >/dev/null 2>&1 || fatal \
+    [[ -f $THEME_CTL && -x $THEME_CTL ]] || fatal \
         "Controller script missing or not executable: $THEME_CTL" \
         "Controller script missing."
 }
