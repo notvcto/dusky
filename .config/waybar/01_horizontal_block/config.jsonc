@@ -1,4 +1,4 @@
-//horizontal_block
+// horizontal_block
 
 {
   "layer": "top",
@@ -15,22 +15,20 @@
   // --- MODULE LAYOUT ---
   "modules-left": [
     "custom/launcher",
+    "hyprland/workspaces",
     "clock",
     "custom/weather",
-    "custom/inhibit-suspend",
-    "custom/updates",
     "custom/notification",
-    "custom/theme-toggle",
-    "custom/net-speed",
-    "tray"
+    "custom/theme-toggle"
   ],
 
   "modules-center": [
-    "hyprland/workspaces"
+    "group/mpris-drawer"
   ],
 
   "modules-right": [
-    "mpris",
+    "tray",
+    "custom/net-speed",
     "network",
     "bluetooth",
     "pulseaudio#output",
@@ -38,14 +36,59 @@
     "cpu",
     "memory",
     "battery",
-    "custom/power"
+    "group/updates-drawer",
+    "group/power-drawer"
   ],
+
+  // --- DRAWERS & GROUPS ---
+
+  "group/updates-drawer": {
+    "orientation": "horizontal",
+    "drawer": {
+      "transition-duration": 400,
+      "children-class": "updates-drawer",
+      "click-to-reveal": false,
+      "transition-left-to-right": false
+    },
+    "modules": [
+      "custom/updates-trigger",
+      "custom/updates"
+    ]
+  },
+
+  "group/mpris-drawer": {
+    "orientation": "horizontal",
+    "drawer": {
+      "transition-duration": 600,
+      "children-class": "mpris-drawer",
+      "click-to-reveal": false,
+      "transition-left-to-right": true
+    },
+    "modules": [
+      "custom/mpris-trigger",
+      "mpris"
+    ]
+  },
+
+  "group/power-drawer": {
+    "orientation": "horizontal",
+    "drawer": {
+      "transition-duration": 400,
+      "children-class": "power-drawer",
+      "click-to-reveal": false,
+      "transition-left-to-right": false
+    },
+    "modules": [
+      "custom/power",
+      "custom/inhibit-suspend"
+    ]
+  },
 
   // --- MODULE CONFIGURATION ---
 
   "custom/launcher": {
     "format": "󰣇",
-    "on-click": "python3 ~/user_scripts/dusky_system/control_center/dusky_control_center.py",
+    "on-click": "uwsm-app -- python3 ~/user_scripts/dusky_system/control_center/dusky_control_center.py",
     "tooltip-format": "Control Center"
   },
 
@@ -65,7 +108,7 @@
         "days": "<span color='#e2e2e2'>{}</span>",
         "weeks": "<span color='#c9ca93'>W{}</span>",
         "weekdays": "<span color='#ffb786'><b>{}</b></span>",
-        "today": "<span color='#131313' background='#ffb786'><b> {} </b></span>"
+        "today": "<span color='#131313' background='#ffb786'><b>{}</b></span>"
       }
     }
   },
@@ -87,12 +130,17 @@
     "escape": true
   },
 
+  "custom/updates-trigger": {
+    "format": "",
+    "tooltip": false
+  },
+
   "custom/updates": {
+    "exec": "tail -F ~/.config/dusky/settings/waybar_update_counter_h 2>/dev/null",
+    "return-type": "json",
     "format": "󰏔 {}",
-    "exec": "checkupdates 2>/dev/null | wc -l || echo 0",
-    "interval": 3600,
-    "on-click": "kitty sh -c 'command -v yay >/dev/null && yay || paru'",
-    "tooltip-format": "System Updates"
+    "tooltip": true,
+    "on-click": "uwsm-app -- kitty sh -c 'command -v yay >/dev/null && yay || paru'"
   },
 
   "custom/notification": {
@@ -153,11 +201,16 @@
     "on-scroll-down": "hyprctl dispatch workspace e+1"
   },
 
+  "custom/mpris-trigger": {
+    "format": "♪",
+    "tooltip": false
+  },
+
   "mpris": {
     "format": "{player_icon} {title}",
     "format-paused": "{status_icon} <i>{title}</i>",
     "format-stopped": "",
-    "max-length": 25,
+    "max-length": 35,
     "player-icons": {
       "default": "󰎆",
       "mpv": "󰎇",
@@ -243,7 +296,7 @@
   "cpu": {
     "interval": 2,
     "format": "󰍛 {usage}%",
-    "on-click": "kitty -e btop",
+    "on-click": "uwsm-app -- kitty -e btop",
     "states": {
       "warning": 70,
       "critical": 90
