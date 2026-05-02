@@ -2073,7 +2073,7 @@ class QuickPanalWindow(Adw.ApplicationWindow):
 
     def _apply_idle(self, is_active: bool):
         if is_active: self.tg_idle.update_state(icon="timer-symbolic", css_class="normal", tooltip="Idle Allowed (Timer Active)\nLMB: Toggle | RMB: Lock Screen")
-        else: self.tg_idle.update_state(icon="coffee-symbolic", css_class="active", tooltip="Idle Inhibited (Awake)\nLMB: Toggle | RMB: Lock Screen")
+        else: self.tg_idle.update_state(icon="view-reveal-symbolic", css_class="active", tooltip="Idle Inhibited (Awake)\nLMB: Toggle | RMB: Lock Screen")
             
     def _apply_blur(self, is_active: bool):
         if is_active: self.tg_blur.update_state(icon="edit-opacity-symbolic", css_class="active", tooltip="Visuals: Blur & Shadow ON\nLMB: Toggle")
