@@ -159,6 +159,7 @@
 	"custom/distro": {
 		"format": "󰣇",
 		"on-click": "gdbus call --session --dest com.github.dusky.controlcenter --object-path /com/github/dusky/controlcenter --method org.freedesktop.Application.Activate '{}'",
+		"on-click-right": "gdbus call --session --dest org.dusky.quickpanal --object-path /org/dusky/quickpanal --method org.freedesktop.Application.Activate '{}'",
 		"tooltip-format": "Control Center"
 	},
 

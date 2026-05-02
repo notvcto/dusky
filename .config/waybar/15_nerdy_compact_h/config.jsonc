@@ -65,8 +65,9 @@
     // ===================================================================
     "custom/launcher": {
         "format": "󰣇",
-        "tooltip-format": "App Launcher\n\nLMB: Control Center\nRMB: Application Launcher",
+        "tooltip-format": "App Launcher\n\nLMB: Control Center\nMMB: Quick Panel\nRMB: Application Launcher",
         "on-click-right": "uwsm-app -- rofi -show drun",
+        "on-click-middle": "gdbus call --session --dest org.dusky.quickpanal --object-path /org/dusky/quickpanal --method org.freedesktop.Application.Activate '{}'",
         "on-click": "python3 ~/user_scripts/dusky_system/control_center/dusky_control_center.py"
     },
 
