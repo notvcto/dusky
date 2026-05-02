@@ -22,7 +22,7 @@ trap '' HUP
 readonly APP_NAME="Dusky quickpanal"
 readonly SERVICE_NAME="dusky_quickpanal.service"
 readonly PROCESS_PATTERN='dusky_quickpanal\.py'
-readonly GUI_SCRIPT_PATH="${HOME}/user_scripts/dusky_system/dusky_quickpanal/dusky_quickpanal.py"
+readonly GUI_SCRIPT_PATH="${HOME}/user_scripts/dusky_system/quickpanal/dusky_quickpanal.py"
 
 # Timing Constants (Seconds)
 readonly GRACE_PERIOD_LOOPS=20
