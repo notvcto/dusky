@@ -429,7 +429,10 @@ display_image() {
 
     [[ -f "$img" ]] || { printf '\e[31mImage not found\e[0m\n'; return 1; }
 
-    (( rows > 4 )) && (( rows -= 3 ))
+    # Deduct lines to account for the preview header (title + wrapped info text + newlines).
+    # This bounding logic is crucial so foot doesn't drop the Sixel payload for overflowing.
+    (( rows > 8 )) && (( rows -= 6 )) || rows=2
+    (( cols > 4 )) && (( cols -= 4 )) || cols=2
 
     if is_kitty && have kitten; then
         if kitten icat --clear --transfer-mode=memory --stdin=no \
@@ -439,7 +442,8 @@ display_image() {
     fi
 
     if have chafa; then
-        chafa --size="${cols}x${rows}" --animate=off "$img" 2>/dev/null
+        # Force high-resolution Sixel protocol instead of block symbols.
+        chafa -f sixel --size="${cols}x${rows}" --animate=off "$img" 2>/dev/null
         return $?
     fi
 
