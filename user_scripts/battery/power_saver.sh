@@ -149,8 +149,20 @@ set_hardware_profiles() {
 
     if [[ "$mode" == "enable" ]]; then
         log_step "Applying Hardware Power Saving Profiles..."
+
+        # 1. STATE CAPTURE (Must occur before daemons cross-communicate)
+        if has_cmd asusctl; then
+            if [[ ! -f "${STATE_DIR}/asus_profile.state" ]]; then
+                local asus_out
+                asus_out=$(asusctl profile get 2>/dev/null || true)
+                # Zero-fork Bash regex to extract the Active Profile name
+                if [[ "$asus_out" =~ Active[[:space:]]profile:[[:space:]]*([A-Za-z]+) ]]; then
+                    save_state "asus_profile" "${BASH_REMATCH[1]}"
+                fi
+            fi
+        fi
         
-        # TLPCTL
+        # 2. APPLY TLPCTL (This may trigger D-Bus events for asusd)
         if has_cmd tlpctl; then
             log_info "Setting tlpctl to power-saver..."
             sudo tlpctl power-saver || true
@@ -158,13 +170,13 @@ set_hardware_profiles() {
             sudo tlp bat || true
         fi
 
-        # ASUSCTL
+        # 3. APPLY ASUSCTL
         if has_cmd asusctl; then
             log_info "Setting asusctl profile to Quiet..."
             asusctl profile set Quiet || true
         fi
 
-        # BRIGHTNESS (Internal)
+        # 4. INTERNAL DISPLAY BRIGHTNESS
         if has_cmd brightnessctl; then
             # Protect against state clobbering on sequential --enable runs
             if [[ ! -f "${STATE_DIR}/brightness.state" ]]; then
@@ -176,8 +188,20 @@ set_hardware_profiles() {
             log_info "Internal brightness locked to ${BRIGHTNESS_PS_LEVEL}."
         fi
 
-        # DDC/CI EXTERNAL BRIGHTNESS (Async)
+        # 5. KEYBOARD BACKLIGHT
+        if has_cmd brightnessctl && brightnessctl -d '*kbd_backlight*' info &>/dev/null; then
+            if [[ ! -f "${STATE_DIR}/kbd_brightness.state" ]]; then
+                local current_kbd
+                current_kbd=$(brightnessctl -d '*kbd_backlight*' get 2>/dev/null || echo "0")
+                save_state "kbd_brightness" "$current_kbd"
+            fi
+            brightnessctl -d '*kbd_backlight*' set 0 -q 2>/dev/null || true
+            log_info "Keyboard backlight disabled."
+        fi
+
+        # 6. EXTERNAL DISPLAY BRIGHTNESS (Async DDC/CI)
         if has_cmd ddcutil; then
+            log_info "Dispatching external monitor brightness lock (async)..."
             (
                 # Protect against state clobbering on sequential --enable runs
                 if [[ ! -f "${STATE_DIR}/ddc_brightness.state" ]]; then
@@ -192,11 +216,10 @@ set_hardware_profiles() {
                 fi
                 # Strip the % sign from BRIGHTNESS_PS_LEVEL if present, as ddcutil requires integers
                 ddcutil setvcp "${DDC_VCP_BRIGHTNESS_CODE}" "${BRIGHTNESS_PS_LEVEL%\%}" &>/dev/null || true
-                log_info "External monitor brightness locked."
             ) &
         fi
 
-        # VOLUME CAP (Zero-Fork Bash Regex)
+        # 7. AUDIO VOLUME CAP
         if has_cmd wpctl; then
             local raw_output
             raw_output=$(wpctl get-volume "${WP_AUDIO_SINK}" 2>/dev/null || true)
@@ -228,10 +251,19 @@ set_hardware_profiles() {
             sudo tlp ac || true
         fi
 
-        # ASUSCTL
+        # ASUSCTL (Stateful Restore)
         if has_cmd asusctl; then
-            log_info "Setting asusctl profile to Performance..."
-            asusctl profile set Performance || true
+            local prev_asus
+            prev_asus=$(get_state "asus_profile")
+            if [[ -n "$prev_asus" ]]; then
+                log_info "Restoring asusctl profile to ${prev_asus}..."
+                asusctl profile set "$prev_asus" || true
+                clear_state "asus_profile"
+            else
+                # Safe Fallback if state file was manually deleted
+                log_info "Setting asusctl profile to Performance..."
+                asusctl profile set Performance || true
+            fi
         fi
 
         # BRIGHTNESS (Internal)
@@ -245,15 +277,26 @@ set_hardware_profiles() {
             fi
         fi
 
+        # KEYBOARD BACKLIGHT
+        if has_cmd brightnessctl && brightnessctl -d '*kbd_backlight*' info &>/dev/null; then
+            local prev_kbd
+            prev_kbd=$(get_state "kbd_brightness")
+            if [[ -n "$prev_kbd" ]]; then
+                brightnessctl -d '*kbd_backlight*' set "${prev_kbd}" -q 2>/dev/null || true
+                clear_state "kbd_brightness"
+                log_info "Keyboard backlight restored."
+            fi
+        fi
+
         # DDC/CI EXTERNAL BRIGHTNESS (Async)
         if has_cmd ddcutil; then
+            log_info "Dispatching external monitor brightness restore (async)..."
             (
                 local prev_ddc
                 prev_ddc=$(get_state "ddc_brightness")
                 if [[ -n "$prev_ddc" ]]; then
                     ddcutil setvcp "${DDC_VCP_BRIGHTNESS_CODE}" "$prev_ddc" &>/dev/null || true
                     clear_state "ddc_brightness"
-                    log_info "External monitor brightness restored."
                 fi
             ) &
         fi
