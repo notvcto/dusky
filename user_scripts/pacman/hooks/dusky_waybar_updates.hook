@@ -6,6 +6,6 @@ Type = Package
 Target = *
 
 [Action]
-Description = Refreshing Waybar Update Counter State for all users...
+Description = Triggering Dusky Update Checker Service for active sessions...
 When = PostTransaction
-Exec = /usr/bin/bash -c 'shopt -s nullglob; for dir in /home/*/; do dir="${dir%/}"; user="${dir##*/}"; script="${dir}/user_scripts/waybar/update_counter.sh"; [[ -x "$script" ]] && runuser -u "$user" -- /usr/bin/bash "$script" --pacman --aur --dusky; done'
+Exec = /usr/bin/bash -c 'shopt -s nullglob; for dir in /home/*/; do user="${dir##*/}"; uid=$(id -u "$user" 2>/dev/null); [[ -n "$uid" && -d "/run/user/$uid" ]] && runuser -u "$user" -- bash -c "XDG_RUNTIME_DIR=/run/user/$uid systemctl --user start update_checker.service"; done'
