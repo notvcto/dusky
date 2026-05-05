@@ -66,7 +66,7 @@ acquire_lock
 # 15 FPS is the sweet spot. Smooth enough to look good, low enough to not crash DBus.
 cat > "$CAVA_CONF" << 'EOF'
 [general]
-framerate = 46
+framerate = 15
 bars = 16
 
 [output]
