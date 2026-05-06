@@ -62,6 +62,7 @@ readonly TARGET_FILES=(
     "dusky_hypridle_timeout.desktop"
     "dusky_hypridle_toggle.desktop"
     "dusky_input.desktop"
+    "dusky_glance.desktop"
     "dusky_gsettings.desktop"
     "dusky_keybinds.desktop"
     "dusky_locale_tui.desktop"
