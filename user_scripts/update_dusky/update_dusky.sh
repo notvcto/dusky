@@ -176,8 +176,8 @@ declare -A CUSTOM_SCRIPT_PATHS=(
     ["dusky_commands_after.sh"]="user_scripts/misc_extra/dusky_commands_after.sh"
     ["rofi_wallpaper_selctor.sh"]="user_scripts/rofi/rofi_wallpaper_selctor.sh"
     ["hypr_anim.sh"]="user_scripts/rofi/hypr_anim.sh"
-    ["dusky_matugen_config_tui.sh"]="user_scripts/theme_matugen/dusky_matugen_config_tui.sh"
-    ["dusky_firefox_tui.sh"]="user_scripts/theme_matugen/dusky_firefox_tui.sh"
+    ["dusky_matugen_config_tui.sh"]="user_scripts/theme_matugen/config/dusky_matugen_config_tui.sh"
+    ["dusky_firefox_tui.sh"]="user_scripts/theme_matugen/firefox/dusky_firefox_tui.sh"
     ["theme_ctl.sh"]="user_scripts/theme_matugen/theme_ctl.sh"
     ["update_counter.sh"]="user_scripts/waybar/update_counter.sh"
 )

@@ -21,6 +21,8 @@ SCRIPT_SEARCH_DIRS=(
     "${HOME}/user_scripts/arch_setup_scripts"
     "${HOME}/user_scripts/rofi"
     "${HOME}/user_scripts/theme_matugen"
+    "${HOME}/user_scripts/theme_matugen/config"
+    "${HOME}/user_scripts/theme_matugen/firefox"
     "${HOME}/user_scripts/btrfs_snapshots"
     "${HOME}/user_scripts/tts_stt/dusky_kokoro"
     "${HOME}/user_scripts/tts_stt/dusky_parakeet"
