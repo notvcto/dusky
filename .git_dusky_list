@@ -3,6 +3,7 @@
 .config/btop/btop.conf
 .config/cava/config
 .config/dusky/version
+.config/dusky_sites/
 .config/dusky_nvim/
 .config/fastfetch/
 .config/firefox_extention_export_data_backup/
