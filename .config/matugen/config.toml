@@ -316,5 +316,5 @@ post_hook   = '''
 input_path = '~/.config/matugen/templates/firefox_websites.css'
 output_path = '~/.config/matugen/generated/firefox_websites.css'
 post_hook = '''
-    ln -nfs "/home/dusk/.config/matugen/generated/firefox_websites.css" "/home/dusk/.mozilla/firefox/dd7ma16i.default-release/chrome/colors.css"
+    ln -nfs "/home/dusk/.config/matugen/generated/firefox_websites.css" "/home/dusk/.config/mozilla/firefox/tox6bnxb.default-release/chrome/colors.css"
 '''

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Dusky Firefox Theme Manager - Master v1.6.0
+# Dusky Firefox Theme Manager - Master v1.6.1
 # Target: Arch Linux / Hyprland / Wayland (Bash 5.3.9+)
 # Architecture: Cache-and-Probe with Idempotent Deployment & Matugen Sync
 # Based on Dusky TUI Engine v5.9
@@ -14,7 +14,7 @@ shopt -s extglob
 # =============================================================================
 
 declare -r APP_TITLE="Dusky Firefox Themer"
-declare -r APP_VERSION="v1.6.0 (Stable)"
+declare -r APP_VERSION="v1.6.1 (Stable)"
 
 declare -r REPO_URL="https://github.com/dusklinux/dusky-websites/archive/refs/heads/main.tar.gz"
 declare -r CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dusky_themer"
@@ -350,9 +350,18 @@ probe_cache() {
         mapfile -t files < <(find "$CACHE_DIR" -maxdepth 1 -type f -name "*.css" -printf "%f\n" | sort)
     fi
     
+    # Autonomous auto-healing cache check
     if (( ${#files[@]} == 0 )); then
-        log_err "No themes found in cache. Run with --sync to fetch."
-        exit 1
+        log_warn "No themes found in cache. Autonomously fetching..."
+        sync_cache
+        if [[ -d "$CACHE_DIR" ]]; then
+            mapfile -t files < <(find "$CACHE_DIR" -maxdepth 1 -type f -name "*.css" -printf "%f\n" | sort)
+        fi
+        
+        if (( ${#files[@]} == 0 )); then
+            log_err "Cache is still empty after sync attempt. Check repository or network."
+            exit 1
+        fi
     fi
     
     local file cat
@@ -948,13 +957,18 @@ main() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --auto) 
+                do_sync=1
+                do_all=1
+                ;;
             --sync) do_sync=1 ;;
             --all)  do_all=1 ;;
             --help|-h)
                 printf "Usage: %s [FLAG]\n\n" "${0##*/}"
                 printf "Options:\n"
+                printf "  --auto      Autonomously sync and enable all available site themes.\n"
                 printf "  --sync      Download/sync latest themes from GitHub.\n"
-                printf "  --all       Autonomously enable all available site themes.\n"
+                printf "  --all       Enable all available site themes (auto-syncs if needed).\n"
                 printf "  --help      Show this help menu.\n"
                 exit 0
                 ;;
