@@ -373,6 +373,8 @@ except ImportError:
 # === ENVIRONMENT ===
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 os.environ['SDL_AUDIODRIVER'] = 'pipewire,pulseaudio,alsa'
+os.environ['SDL_APP_NAME'] = 'WayClick'
+os.environ['PULSE_PROP'] = 'application.name="WayClick"'
 
 import pygame
 import evdev
