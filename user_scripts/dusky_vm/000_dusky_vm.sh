@@ -42,9 +42,9 @@ set -o nounset
 set -o pipefail
 
 # 2. Paths & Constants
-readonly STATE_FILE="${HOME}/Documents/.install_state"
-readonly LOG_FILE="${HOME}/Documents/logs/install_$(date +%Y%m%d_%H%M%S).log"
-readonly LOCK_FILE="/tmp/orchestra_${UID}.lock"
+readonly STATE_FILE="${HOME}/Documents/logs/dusky_vm/.install_state"
+readonly LOG_FILE="${HOME}/Documents/logs/dusky_vm/install_$(date +%Y%m%d_%H%M%S).log"
+readonly LOCK_FILE="/tmp/orchestra_vm_${UID}.lock"
 readonly SUDO_REFRESH_INTERVAL=50
 
 # 3. Global Variables
