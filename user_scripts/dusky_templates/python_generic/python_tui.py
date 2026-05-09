@@ -180,7 +180,15 @@ class PickerScreen(ModalScreen[str | None]):
 
 class ConfigOptionList(OptionList):
     """Subclassed OptionList with native scroll tracking and cached index."""
+    BINDINGS = [
+        Binding("enter", "app.submit_current", "Action")
+    ]
+    
     last_highlighted_idx: int = 0
+    _mouse_down_highlight: int | None = None
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        self._mouse_down_highlight = self.highlighted
 
     def watch_scroll_y(self, old_value: float, new_value: float) -> None:
         super().watch_scroll_y(old_value, new_value)
@@ -191,6 +199,41 @@ class ConfigOptionList(OptionList):
         super().watch_max_scroll_y(old_value, new_value)
         if hasattr(self.app, "_update_scroll_indicators"):
             self.app._update_scroll_indicators()
+
+    def on_resize(self, event: events.Resize) -> None:
+        if hasattr(self.app, "_update_scroll_indicators"):
+            self.app._update_scroll_indicators()
+
+class ScrollIndicator(Label):
+    def update_scroll(self, scroll_y: float, max_scroll_y: float, viewport_height: float, virtual_height: float) -> None:
+        if max_scroll_y <= 0 or virtual_height <= 0 or viewport_height <= 2:
+            self.display = False
+            return
+        
+        self.display = True
+        
+        track_height = int(viewport_height) - 2
+        if track_height < 1:
+            self.update("▲\n▼")
+            return
+            
+        thumb_size = max(1, int(track_height * (viewport_height / virtual_height)))
+        max_pos = track_height - thumb_size
+        
+        if max_scroll_y > 0:
+            pos = int((scroll_y / max_scroll_y) * max_pos)
+        else:
+            pos = 0
+            
+        txt = Text()
+        txt.append("▲\n", style="bold")
+        for i in range(track_height):
+            if pos <= i < pos + thumb_size:
+                txt.append("█\n")
+            else:
+                txt.append("│\n", style="dim")
+        txt.append("▼", style="bold")
+        self.update(txt)
 
 class Shortcut(Label):
     def __init__(self, key_text: str, label: str, action_name: str | None = None) -> None:
@@ -280,7 +323,7 @@ class DuskyApp(App):
     
     #main-box {
         width: 100%; height: 100%;
-        border: solid $secondary;
+        border: solid $primary 50%;
         border-title-color: $primary;
         border-title-style: bold;
         border-title-align: center;
@@ -306,9 +349,8 @@ class DuskyApp(App):
     ConfigOptionList > .option-list--option-hover { background: $primary 10%; }
     ConfigOptionList > .option-list--option-highlighted { background: $primary 20%; }
     
-    .indicator-column { width: 2; height: 1fr; background: transparent; }
-    .scroll-up-indicator { dock: top; height: 1; color: $primary; text-style: bold; display: none; }
-    .scroll-down-indicator { dock: bottom; height: 1; color: $primary; text-style: bold; display: none; }
+    .indicator-column { width: 2; height: 1fr; background: transparent; align: right top; }
+    ScrollIndicator { width: 1; height: 1fr; color: $primary; }
     
     #footer { height: 4; dock: bottom; border-top: solid $secondary; padding-top: 0; background: transparent; }
     #footer-controls { width: 100%; }
@@ -362,8 +404,7 @@ class DuskyApp(App):
                         with Horizontal(classes="list-wrapper"):
                             yield ConfigOptionList(id=f"list-{i}")
                             with Vertical(classes="indicator-column"):
-                                yield Label("▲", classes="scroll-up-indicator", id=f"up-{i}")
-                                yield Label("▼", classes="scroll-down-indicator", id=f"down-{i}")
+                                yield ScrollIndicator("", id=f"indicator-{i}")
             yield AppFooter(id="footer")
 
     def _build_option(self, item: ConfigItem, is_highlighted: bool = False) -> Text:
@@ -534,11 +575,17 @@ class DuskyApp(App):
         try:
             tab_idx = int(tc.active.split("-")[1])
             ol = self.query_one(f"#list-{tab_idx}", ConfigOptionList)
-            up_ind = self.query_one(f"#up-{tab_idx}", Label)
-            down_ind = self.query_one(f"#down-{tab_idx}", Label)
+            indicator = self.query_one(f"#indicator-{tab_idx}", ScrollIndicator)
             
-            up_ind.display = ol.scroll_y > 0
-            down_ind.display = ol.scroll_y < ol.max_scroll_y
+            if ol.max_scroll_y > 0 and ol.size.height > 2:
+                indicator.update_scroll(
+                    ol.scroll_y, 
+                    ol.max_scroll_y, 
+                    ol.size.height, 
+                    ol.virtual_size.height
+                )
+            else:
+                indicator.display = False
         except Exception:
             pass
 
@@ -647,7 +694,11 @@ class DuskyApp(App):
 
     @on(OptionList.OptionSelected)
     def handle_selection(self, event: OptionList.OptionSelected) -> None:
-        self._handle_item_action(event.option_list, event.option_index)
+        ol = event.option_list
+        if isinstance(ol, ConfigOptionList):
+            # Only trigger action if item was already highlighted prior to the click
+            if ol._mouse_down_highlight == event.option_index:
+                self._handle_item_action(ol, event.option_index)
 
     def _handle_item_action(self, ol: ConfigOptionList, index: int) -> None:
         try:
