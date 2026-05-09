@@ -375,8 +375,8 @@ class DuskyApp(App):
     ContentSwitcher { height: 1fr; background: transparent; }
     
     Tabs { height: 1; margin-bottom: 1; background: transparent; }
-    Tabs > .underline { display: none; } 
-    Tab { height: 1; padding: 0 1; color: $secondary; background: transparent; border: none; }
+    Tabs > .underline { display: none; }
+    Tab { height: 1; padding: 0 1; color: $primary 60%; background: transparent; border: none; }
     Tab:hover { color: $text; background: $primary 25%; }
     Tab.-active { color: $background; background: $primary; text-style: bold; border: none; }
     
