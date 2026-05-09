@@ -1,237 +1,111 @@
 #!/usr/bin/env python3
 import os
-import sys
+import json
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass, field
+from typing import Any, Literal
 
+from textual import work, on, events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical, Horizontal
-from textual.widgets import Label, Input, Static
+from textual.widgets import Label, Input, Static, ListView, ListItem, Tabs, Tab
 from textual.screen import ModalScreen
 from textual.reactive import reactive
-from textual.events import Resize
-from textual import work
+from textual.theme import Theme
 
-from rich.table import Table
 from rich.text import Text
 from rich.markup import escape
 
 # =============================================================================
-# MATUGEN THEME ENGINE (Deep Resolution)
+# HOT-RELOADING NATIVE JSON THEME ENGINE
 # =============================================================================
 
-def load_matugen_theme() -> dict[str, str]:
-    colors = {}
-    matugen_path = Path("~/.config/matugen/generated/dusky_tui.css").expanduser()
-    
-    if matugen_path.exists():
-        try:
-            with open(matugen_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("@define-color"):
-                        parts = line.split()
-                        if len(parts) >= 3:
-                            name = parts[1]
-                            val = parts[2].rstrip(";")
-                            colors[name] = val
-        except Exception:
-            pass
+THEME_FILE_PATH = Path("~/.config/matugen/generated/dusky_tui.json").expanduser()
 
-    resolved_all = False
-    while not resolved_all:
-        resolved_all = True
-        for k, v in colors.items():
-            if v.startswith("@"):
-                ref_name = v[1:]
-                if ref_name in colors and not colors[ref_name].startswith("@"):
-                    colors[k] = colors[ref_name]
-                    resolved_all = False
-
-    return {
-        "bg": colors.get("window_bg_color", "#151218"),
-        "fg": colors.get("window_fg_color", "#e8e0e8"),
-        "accent": colors.get("accent_color", "#d9bafa"),
-        "error": colors.get("error_color", "#ff5555"),
-        "warning": colors.get("warning_color", "#f9e2af"),
-        "success": colors.get("success_color", "#a6e3a1"),
-        "muted": colors.get("surface_variant", "#4c4c4c")
+def load_matugen_json(file_path: Path) -> dict[str, str]:
+    colors = {
+        "bg": "#111318", "fg": "#e1e2e9", "accent": "#a8c8ff", 
+        "error": "#ffb4ab", "warning": "#bdc7dc", "success": "#dbbce1", "muted": "#43474e"
     }
+    if not file_path.exists():
+        return colors
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            colors.update(data)
+    except Exception:
+        pass
+    return colors
 
-THEME = load_matugen_theme()
+THEME = load_matugen_json(THEME_FILE_PATH)
 
 # =============================================================================
-# SCHEMA & DATA DEFINITIONS (Python 3.14 Dataclasses)
+# SCHEMA & DATA DEFINITIONS
 # =============================================================================
 
-@dataclass
+type ConfigType = Literal["bool", "int", "float", "string", "cycle", "action", "menu", "picker"]
+
+@dataclass(kw_only=True)
 class ConfigItem:
     label: str
     key: str
-    scope: str
-    type_: str
-    default: any
+    scope: str = "DEFAULT"
+    type_: ConfigType
+    default: Any
     options: list[str] = field(default_factory=list)
-    value: any = None
+    hints: list[str] = field(default_factory=list)
+    min_val: float | None = None
+    max_val: float | None = None
+    step: float | None = None
+    value: Any = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.value is None:
             self.value = self.default
 
-# Extended tabs to demonstrate dynamic horizontal overflow
-TABS = [
-    "General", "Network", "Display", "System", "Audio", "Storage", 
-    "Security", "Bluetooth", "Advanced", "Developer", "Appearance", "Power"
-]
-
-SCHEMA = {
+TABS = ["General", "Network", "Display", "System", "Audio", "Storage", "Security"]
+SCHEMA: dict[int, list[ConfigItem]] = {
     0: [
-        ConfigItem("Enable Service", "service_enabled", "DEFAULT", "bool", True),
-        ConfigItem("Timeout (ms)", "timeout", "DEFAULT", "int", 100),
-        ConfigItem("Log Prefix", "log_prefix", "DEFAULT", "string", "myapp_"),
+        ConfigItem(label="Enable Daemon", key="service_enabled", type_="bool", default=True),
+        ConfigItem(label="Timeout (ms)", key="timeout", type_="int", default=100, min_val=0, max_val=5000, step=50),
+        ConfigItem(label="Log Prefix", key="log_prefix", type_="string", default="myapp_"),
+        ConfigItem(label="Scale Factor", key="scale", type_="float", default=1.0, min_val=0.5, max_val=3.0, step=0.1),
     ],
     1: [
-        ConfigItem("Hostname", "hostname", "DEFAULT", "string", ""),
-        ConfigItem("Protocol", "protocol", "network", "cycle", "tcp", ["tcp", "udp", "icmp"]),
-    ],
-    2: [
-        ConfigItem("Border Size", "border_size", "display", "int", 2),
-        ConfigItem("Blur Enabled", "blur_enabled", "display", "bool", True),
+        ConfigItem(label="Hostname", key="hostname", type_="string", default="arch-linux"),
+        ConfigItem(label="Protocol", key="protocol", type_="cycle", default="tcp", options=["tcp", "udp", "icmp"]),
+        ConfigItem(label="Port", key="port", type_="int", default=8080, min_val=1, max_val=65535, step=1),
     ],
     3: [
-        ConfigItem("Shadow Color", "color", "decoration", "cycle", "0xee1a1a1a", ["0xee1a1a1a", "0xff000000"]),
-        ConfigItem("Restart Daemon", "restart", "action", "action", ""),
+        ConfigItem(label="Select Theme", key="demo_picker", type_="picker", default="Tokyo Night", 
+                   options=["Catppuccin Mocha", "Nord", "Dracula", "Gruvbox", "Tokyo Night"],
+                   hints=["Warm & Pastel", "Arctic Cold", "Vampire Dark", "Retro Groove", "Neon Lights"]),
+        ConfigItem(label="Restart Daemon", key="demo_sudo", type_="action", default=""),
+        ConfigItem(label="Shadow Color", key="color", type_="cycle", default="0xee1a1a1a", options=["0xee1a1a1a", "0xff000000"]),
     ]
 }
 
-# Auto-populate empty schema tabs for testing
-for i in range(4, len(TABS)):
-    SCHEMA[i] = [ConfigItem(f"Test Item {i}", f"test_{i}", "test", "bool", False)]
+# Auto-hydrate test data
+for i in range(len(TABS)):
+    if i not in SCHEMA: SCHEMA[i] = []
+    for j in range(len(SCHEMA[i]), 35):
+        cat = TABS[i]
+        cycle_type = j % 3
+        if cycle_type == 0:
+            SCHEMA[i].append(ConfigItem(label=f"{cat} Flag {j}", key=f"{cat.lower()}_{j}", type_="bool", default=(j % 2 == 0)))
+        elif cycle_type == 1:
+            SCHEMA[i].append(ConfigItem(label=f"{cat} Buffer {j}", key=f"{cat.lower()}_{j}", type_="int", default=256 + j, min_val=0, max_val=4096, step=16))
+        else:
+            SCHEMA[i].append(ConfigItem(label=f"{cat} Path {j}", key=f"{cat.lower()}_{j}", type_="string", default=f"/etc/{cat.lower()}/conf.d"))
 
 # =============================================================================
-# NATIVE TEXTUAL WIDGETS
+# MODALS & OVERLAYS
 # =============================================================================
 
-class TabBar(Horizontal):
-    """Dynamic Tab Bar that handles terminal width and injects « » arrows."""
-    
-    def compose(self) -> ComposeResult:
-        yield Horizontal(id="tab-container")
-
-    def rebuild_tabs(self, current_tab: int, scroll_offset: int, max_width: int) -> None:
-        container = self.query_one("#tab-container")
-        container.remove_children()
-        
-        used_width = 0
-        
-        # Left arrow injection
-        if scroll_offset > 0:
-            lbl = Label("« ", classes="tab-arrow")
-            lbl.on_click = lambda: self.app.switch_tab(max(0, current_tab - 1))
-            container.mount(lbl)
-            used_width += 2
-
-        for i in range(scroll_offset, len(TABS)):
-            tab_name = TABS[i]
-            is_last = (i == len(TABS) - 1)
-            
-            chunk_len = len(tab_name) + 2
-            if not is_last:
-                chunk_len += 3
-                
-            if used_width + chunk_len + 3 > max_width:
-                # Right arrow injection if we run out of space
-                lbl = Label("» ", classes="tab-arrow")
-                lbl.on_click = lambda: self.app.switch_tab(min(len(TABS)-1, current_tab + 1))
-                container.mount(lbl)
-                break
-                
-            # Create native clickable tab
-            classes = "tab active" if i == current_tab else "tab"
-            tab_lbl = Label(f" {tab_name} ", classes=classes)
-            
-            def make_handler(idx=i):
-                return lambda: self.app.switch_tab(idx)
-            tab_lbl.on_click = make_handler()
-            
-            container.mount(tab_lbl)
-            used_width += len(tab_name) + 2
-            
-            if not is_last:
-                container.mount(Label(" | ", classes="tab-sep"))
-                used_width += 3
-
-class ConfigRow(Horizontal, can_focus=True):
-    """A native focusable row representing one config item."""
-    
-    def __init__(self, item: ConfigItem):
-        super().__init__(classes="config-row")
-        self.item = item
-
-    def compose(self) -> ComposeResult:
-        yield Label(">", classes="row-cursor")
-        yield Label(self.item.label, classes="row-label")
-        yield Label(self.build_display(), id="row-value")
-
-    def build_display(self) -> str:
-        val_str = str(self.item.value)
-        def_str = str(self.item.default)
-        
-        dot_color = THEME["error"] if val_str != def_str else THEME["warning"]
-        dot = f"[{dot_color}]●[/]"
-        
-        display_val = escape(val_str)
-        if self.item.type_ == "bool":
-            display_val = f"[{THEME['success']}]ON[/]" if self.item.value else f"[{THEME['error']}]OFF[/]"
-        elif self.item.type_ == "string":
-            if val_str == "":
-                display_val = f"[italic {THEME['muted']}]Unset[/]"
-            else:
-                display_val = f"[{THEME['fg']}]{display_val}[/]"
-            # Escaping the pencil bracket so Rich doesn't try to parse [✎] as a style
-            display_val = f"[{THEME['accent']}]\[✎][/] {display_val}"
-        elif self.item.type_ == "action":
-            display_val = f"[{THEME['accent']}]▶[/] press Enter"
-        else:
-            display_val = f"[{THEME['fg']}]{display_val}[/]"
-
-        return f"{dot} : {display_val}"
-
-    def update_display(self) -> None:
-        self.query_one("#row-value", Label).update(self.build_display())
-
-    def on_click(self) -> None:
-        self.focus()
-        if self.item.type_ in ("bool", "action", "string"):
-            self.app.action_enter()
-
-class AppFooter(Static):
-    """Exact recreation of the Bash Script's 3-line bottom controls."""
-    
-    def render(self) -> Text:
-        acc = THEME['accent']
-        warn = THEME['warning']
-        err = THEME['error']
-        fg = THEME['fg']
-        
-        # All literal brackets MUST be escaped with a backslash to prevent MissingStyle errors
-        txt = Text.from_markup(
-            f" [{acc}]\[Tab][/] Category   [{acc}]\[r][/] Reset Item   [{acc}]\[R][/] Reset All   [{acc}]\[←/→ h/l][/] Adjust\n"
-            f" [{acc}]\[Enter][/] Action   [{acc}]\[q][/] Quit   [{warn}]●[/][{acc}] Default[/]  [{err}]●[/][{acc}] Modified[/]\n"
-        )
-        
-        status_msg = getattr(self.app, "status_msg", "")
-        if status_msg:
-            txt.append_text(Text.from_markup(f" [{acc}]Status:[/] [{err}]{escape(status_msg)}[/]"))
-        else:
-            txt.append_text(Text.from_markup(f" [{acc}]File:[/] [{fg}]~/.config/myapp/settings.conf[/]"))
-            
-        return txt
-
-class TextInputOverlay(ModalScreen[str]):
-    """Clean, centered modal for string entry."""
-    
-    def __init__(self, prompt: str, default: str):
+class TextInputOverlay(ModalScreen[str | None]):
+    def __init__(self, prompt: str, default: str) -> None:
         super().__init__()
         self.prompt_text = prompt
         self.default_text = default
@@ -239,211 +113,448 @@ class TextInputOverlay(ModalScreen[str]):
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-dialog"):
             yield Label(self.prompt_text, id="modal-title")
-            yield Input(value=self.default_text)
+            yield Input(value=self.default_text, id="modal-input")
 
     def on_mount(self) -> None:
         self.query_one(Input).focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    @on(Input.Submitted)
+    def handle_submit(self, event: Input.Submitted) -> None:
+        event.stop()
         self.dismiss(event.value)
         
-    def on_key(self, event) -> None:
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+
+class PickerScreen(ModalScreen[str | None]):
+    def __init__(self, title: str, options: list[str], hints: list[str]) -> None:
+        super().__init__()
+        self.picker_title = title
+        self.options = options
+        self.hints = hints
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="picker-dialog"):
+            yield Label(f"PICKER: {self.picker_title}", id="picker-title")
+            yield ListView(*[ListItem(Label(f"{opt} - [italic {THEME['muted']}]{hint}[/]")) for opt, hint in zip(self.options, self.hints)], id="picker-list")
+            yield Label(" [Enter] Select   [Esc] Cancel", id="picker-footer")
+
+    def on_mount(self) -> None:
+        self.query_one(ListView).focus()
+
+    @on(ListView.Selected)
+    def on_selected(self, event: ListView.Selected) -> None:
+        idx = self.query_one(ListView).index
+        if idx is not None:
+            self.dismiss(self.options[idx])
+
+    def on_key(self, event: events.Key) -> None:
         if event.key == "escape":
             self.dismiss(None)
 
 # =============================================================================
-# MAIN APPLICATION LOGIC
+# INTERACTIVE COMPONENTS
+# =============================================================================
+
+class ConfigRow(ListItem):
+    def __init__(self, item: ConfigItem) -> None:
+        super().__init__(classes="config-row")
+        self.item = item
+        self.can_focus = False 
+
+    def compose(self) -> ComposeResult:
+        with Horizontal():
+            yield Label("➤", classes="row-cursor")
+            yield Label(self.item.label, classes="row-label")
+            yield Label(self.build_display(), classes="row-value")
+
+    def on_click(self, event: events.Click) -> None:
+        """Guarantees explicit left-click selection without relying on deep layout bubbling."""
+        parent = self.parent
+        if isinstance(parent, ListView):
+            try:
+                parent.index = parent.children.index(self)
+                parent.focus()
+            except ValueError:
+                pass
+
+    def build_display(self) -> str:
+        val_str = str(self.item.value)
+        def_str = str(self.item.default)
+        
+        dot_color = THEME["error"] if val_str != def_str else THEME["muted"]
+        dot = f"[{dot_color}]●[/]"
+        
+        display_val = escape(val_str)
+        match self.item.type_:
+            case "bool":
+                display_val = f"[{THEME['accent']}]ON[/]" if self.item.value else f"[{THEME['muted']}]OFF[/]"
+            case "string":
+                display_val = f"[italic {THEME['muted']}]Unset[/]" if val_str == "" else f"[{THEME['fg']}]{display_val}[/]"
+                display_val = f"[{THEME['accent']}]\\[✎][/] {display_val}"
+            case "action":
+                display_val = f"[{THEME['accent']}]▶[/] press Enter"
+            case "picker":
+                display_val = f"[{THEME['accent']}]\\[+][/] {display_val}"
+            case _:
+                display_val = f"[{THEME['fg']}]{display_val}[/]"
+
+        return f"{dot} : {display_val}"
+
+    def update_display(self) -> None:
+        self.query_one(".row-value", Label).update(self.build_display())
+
+class Shortcut(Label):
+    def __init__(self, key_text: str, label: str, action_name: str | None = None) -> None:
+        super().__init__(classes="footer-shortcut")
+        self.key_text = key_text
+        self.label_text = label
+        self.action_name = action_name
+
+    def render(self) -> Text:
+        txt = Text()
+        txt.append(f"[{self.key_text}] ", style=THEME["accent"])
+        txt.append(self.label_text, style=THEME["fg"])
+        return txt
+
+    def on_click(self) -> None:
+        if self.action_name:
+            getattr(self.app, f"action_{self.action_name}")()
+
+class FileLink(Label):
+    """Handles deep OS integration for GUI/CLI text editors."""
+    path = "~/.config/myapp/settings.conf"
+    
+    def render(self) -> Text:
+        txt = Text()
+        txt.append(" File: ", style=THEME["accent"])
+        txt.append(self.path, style=THEME["fg"] + " underline")
+        return txt
+        
+    def on_click(self, event: events.Click) -> None:
+        expanded_path = Path(self.path).expanduser().resolve()
+        expanded_path.parent.mkdir(parents=True, exist_ok=True)
+        expanded_path.touch(exist_ok=True)
+        
+        try:
+            if event.button == 1:
+                # Left Click -> GNOME Text Editor (Detached & Sandboxed Stdout/Stderr)
+                subprocess.Popen(
+                    ["gnome-text-editor", str(expanded_path)], 
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            elif event.button == 3:
+                # Right Click -> Suspend TUI, yield TTY to Neovim safely
+                with self.app.suspend():
+                    subprocess.run(["nvim", str(expanded_path)])
+        except FileNotFoundError:
+            if hasattr(self.app, "notify_status"):
+                getattr(self.app, "notify_status")("Error: Editor executable not found in PATH.")
+
+class AppFooter(Vertical):
+    pagination_info = reactive("[1/35]")
+    status_msg = reactive("")
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="footer-controls"):
+            yield Shortcut("Tab", "Category", "next_tab")
+            yield Shortcut("r", "Reset Item", "reset_item")
+            yield Shortcut("R", "Reset All", "reset_all")
+            yield Shortcut("←/→ h/l", "Adjust")
+            yield Label(self.pagination_info, id="pagination-label")
+        with Horizontal(id="footer-secondary"):
+            yield Shortcut("Enter", "Action", "submit_current")
+            yield Shortcut("q", "Quit", "quit")
+            yield Label(f"   [{THEME['muted']}]●[/] Default  [{THEME['error']}]●[/] Modified", id="footer-legend")
+        
+        with Horizontal(id="footer-bottom-row"):
+            yield Label("", id="status-bar")
+            yield FileLink(id="file-link")
+
+    def watch_pagination_info(self, new_val: str) -> None:
+        for label in self.query("#pagination-label"):
+            label.update(new_val)
+
+    def watch_status_msg(self, new_val: str) -> None:
+        for bar in self.query("#status-bar"):
+            for link in self.query("#file-link"):
+                if new_val:
+                    txt = Text()
+                    txt.append(" Status: ", style=THEME["accent"])
+                    txt.append(new_val, style=THEME["error"])
+                    bar.update(txt)
+                    bar.display = True
+                    link.display = False
+                else:
+                    bar.display = False
+                    link.display = True
+
+# =============================================================================
+# MAIN APPLICATION
 # =============================================================================
 
 class DuskyApp(App):
-    CSS = f"""
-    Screen {{ background: {THEME['bg']}; }}
+    CSS = """
+    Screen { background: $background; }
     
-    #main-box {{
-        width: 100%;
-        height: 100%;
-        border: solid {THEME['muted']};
-        border-title-color: {THEME['accent']};
+    #main-box {
+        width: 100%; height: 100%;
+        border: solid $secondary;
+        border-title-color: $primary;
         border-title-style: bold;
         border-title-align: center;
-        background: {THEME['bg']};
+        background: transparent;
         padding: 0 1;
-    }}
+    }
     
-    TabBar {{ height: 1; margin-bottom: 1; }}
-    .tab {{ color: {THEME['muted']}; }}
-    .tab.active {{ color: {THEME['bg']}; background: {THEME['accent']}; text-style: bold; }}
-    .tab-sep {{ color: {THEME['muted']}; }}
-    .tab-arrow {{ color: {THEME['warning']}; text-style: bold; }}
+    Tabs { height: 1; margin-bottom: 1; background: transparent; }
+    Tabs > .underline { display: none; } 
+    Tab { height: 1; padding: 0 1; color: $secondary; background: transparent; border: none; }
+    Tab:hover { color: $text; }
+    Tab.-active { color: $background; background: $primary; text-style: bold; border: none; }
     
-    #content-list {{ height: 1fr; margin-bottom: 1; overflow-y: auto; overflow-x: hidden; scrollbar-size: 0 0; }}
+    #content-list { height: 1fr; margin-bottom: 1; overflow-y: auto; overflow-x: hidden; scrollbar-size: 0 0; background: transparent; border: none; }
     
-    .config-row {{ height: 1; }}
-    .config-row:focus > .row-cursor {{ color: {THEME['accent']}; }}
-    .config-row:focus > .row-label {{ text-style: bold; color: {THEME['fg']}; }}
+    .config-row { height: 1; padding: 0; background: transparent; }
     
-    .row-cursor {{ width: 2; color: transparent; }}
-    .row-label {{ width: 25; color: {THEME['fg']}; }}
+    /* Hover State: Purely Visual Glow (Does NOT claim cursor or selection) */
+    .config-row:hover { background: $primary 10%; }
     
-    #footer {{ height: 3; dock: bottom; border-top: solid {THEME['muted']}; padding-top: 0; }}
+    /* Highlight State: Persistent Selection */
+    .config-row.-highlight { background: $primary 20%; }
+    .config-row.-highlight > Horizontal > .row-cursor { color: $primary; }
+    .config-row.-highlight > Horizontal > .row-label { color: $text; text-style: bold; }
     
-    /* Modal CSS */
-    TextInputOverlay {{ align: center middle; background: rgba(0, 0, 0, 0.7); }}
-    #modal-dialog {{ width: 50; height: 7; background: {THEME['bg']}; border: solid {THEME['accent']}; padding: 1 2; }}
-    #modal-title {{ color: {THEME['accent']}; margin-bottom: 1; }}
-    Input {{ border: none; background: {THEME['bg']}; color: {THEME['fg']}; border-bottom: solid {THEME['accent']}; }}
-    Input:focus {{ border: none; border-bottom: solid {THEME['accent']}; }}
+    .row-cursor { width: 2; color: transparent; }
+    .row-label { width: 35; color: $text; }
+    
+    #footer { height: 4; dock: bottom; border-top: solid $secondary; padding-top: 0; background: transparent; }
+    #footer-controls { width: 100%; }
+    #pagination-label { dock: right; color: $primary; text-style: bold; margin-right: 1; }
+    
+    .footer-shortcut { margin-right: 2; }
+    .footer-shortcut:hover { text-style: bold; color: $primary; }
+    #footer-legend { color: $text; }
+    
+    #footer-bottom-row { margin-top: 1; }
+    #file-link:hover { text-style: bold; color: $primary; }
+    
+    TextInputOverlay, PickerScreen { align: center middle; background: rgba(0, 0, 0, 0.75); }
+    #modal-dialog { width: 50; height: 7; background: $background; border: solid $primary; padding: 1 2; }
+    #modal-title { color: $primary; margin-bottom: 1; }
+    Input { border: none; background: transparent; color: $text; border-bottom: solid $primary; }
+    Input:focus { border: none; border-bottom: solid $primary; }
+    
+    #picker-dialog { width: 60; height: 15; background: $background; border: solid $primary; padding: 1 2; }
+    #picker-title { color: $primary; margin-bottom: 1; text-style: bold; border-bottom: solid $secondary; }
+    #picker-list { height: 1fr; scrollbar-size: 0 0; background: transparent; border: none; }
+    #picker-list > ListItem { height: 1; background: transparent; }
+    #picker-list > ListItem.-highlight { background: $primary 20%; }
+    #picker-footer { color: $primary; margin-top: 1; }
     """
 
-    status_msg = reactive("")
-    current_tab = 0
-    tab_scroll_offset = 0
+    BINDINGS = [
+        Binding("q,ctrl+c", "quit", "Quit", priority=True),
+        Binding("tab", "next_tab", "Next Tab", priority=True),
+        Binding("shift+tab", "prev_tab", "Prev Tab", priority=True),
+        Binding("j,down", "cursor_down", "Down", priority=True),
+        Binding("k,up", "cursor_up", "Up", priority=True),
+        Binding("g", "scroll_top", "Top", priority=True),
+        Binding("G", "scroll_bottom", "Bottom", priority=True),
+        Binding("h,left,backspace", "adjust(-1)", "Adjust Down", priority=True),
+        Binding("l,right", "adjust(1)", "Adjust Up", priority=True),
+        Binding("r", "reset_item", "Reset", priority=True),
+        Binding("R", "reset_all", "Reset All", priority=True),
+        Binding("ctrl+d,page_down", "page_down", "Page Down", priority=True),
+        Binding("ctrl+u,page_up", "page_up", "Page Up", priority=True),
+    ]
+
+    current_tab_idx: int = 0
+    last_theme_mtime: float = 0.0
+    tab_states: dict[int, int] = {}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="main-box"):
-            yield TabBar()
-            yield Vertical(id="content-list")
+            yield Tabs(*[Tab(name, id=f"tab-{i}") for i, name in enumerate(TABS)])
+            yield ListView(id="content-list")
             yield AppFooter(id="footer")
 
     def on_mount(self) -> None:
-        self.query_one("#main-box").border_title = " Generic System Config Editor v6.3 "
-        self.switch_tab(0)
+        self.query_one("#main-box").border_title = " Generic System Config Editor v7.0.3 "
+        self.apply_theme_to_engine()
+        self.load_tab_content(0)
+        self.set_interval(0.5, self.watch_theme_file)
 
-    def on_resize(self, event: Resize) -> None:
-        """Handle terminal resizes natively to calculate tab overflow."""
-        self.rebuild_tab_bar(event.size.width)
-
-    def watch_status_msg(self, value: str) -> None:
-        self.query_one("#footer", AppFooter).refresh()
-
-    def notify_status(self, msg: str) -> None:
-        self.status_msg = msg
-        self.set_timer(3, self.clear_status)
-
-    def clear_status(self) -> None:
-        self.status_msg = ""
-
-    def rebuild_tab_bar(self, width: int | None = None) -> None:
+    def watch_theme_file(self) -> None:
         try:
-            max_w = (width or self.size.width) - 6
-            self.query_one(TabBar).rebuild_tabs(self.current_tab, self.tab_scroll_offset, max_w)
-        except Exception:
+            current_mtime = THEME_FILE_PATH.stat().st_mtime
+            if current_mtime > self.last_theme_mtime:
+                self.last_theme_mtime = current_mtime
+                new_theme = load_matugen_json(THEME_FILE_PATH)
+                THEME.update(new_theme) 
+                
+                self.apply_theme_to_engine()
+                
+                for row in self.query(ConfigRow):
+                    row.update_display()
+                for shortcut in self.query(Shortcut):
+                    shortcut.refresh()
+                    
+                for footer in self.query(AppFooter):
+                    for legend in footer.query("#footer-legend"):
+                        legend.update(f"   [{THEME['muted']}]●[/] Default  [{THEME['error']}]●[/] Modified")
+                for link in self.query(FileLink):
+                    link.refresh()
+        except OSError:
             pass
 
-    def switch_tab(self, idx: int) -> None:
-        self.current_tab = idx
+    def apply_theme_to_engine(self) -> None:
+        self._theme_revision = getattr(self, "_theme_revision", 0) + 1
+        theme_name = f"dusky_matugen_rev{self._theme_revision}"
+
+        custom_theme = Theme(
+            name=theme_name,
+            primary=THEME["accent"],
+            secondary=THEME["muted"],
+            background=THEME["bg"],
+            surface=THEME["bg"],
+            warning=THEME["warning"],
+            error=THEME["error"],
+            success=THEME["success"],
+            foreground=THEME["fg"],
+        )
         
-        if idx < self.tab_scroll_offset:
-            self.tab_scroll_offset = idx
-        elif idx > self.tab_scroll_offset + 3: 
-            self.tab_scroll_offset = max(0, idx - 3)
+        self.register_theme(custom_theme)
+        self.theme = theme_name
 
-        self.rebuild_tab_bar()
-
-        list_container = self.query_one("#content-list")
-        list_container.remove_children()
+    def load_tab_content(self, idx: int) -> None:
+        lv = self.query_one("#content-list", ListView)
+        
+        # Save the layout state of the outgoing tab
+        if lv.children:
+            self.tab_states[self.current_tab_idx] = lv.index if lv.index is not None else 0
+            
+        self.current_tab_idx = idx
+        lv.clear()
         
         items = SCHEMA.get(idx, [])
         for item in items:
-            list_container.mount(ConfigRow(item))
+            lv.append(ConfigRow(item))
             
         if items:
-            self.call_later(lambda: list_container.children[0].focus())
+            # We defer focus and index restoration to ensure the DOM has fully populated, 
+            # locking the CSS highlight onto the exact right item instantly.
+            def restore_state() -> None:
+                lv.focus()
+                saved_idx = self.tab_states.get(idx, 0)
+                lv.index = min(saved_idx, len(items) - 1)
+                self.query_one(AppFooter).pagination_info = f"[{lv.index + 1}/{len(items)}]"
+            
+            self.call_after_refresh(restore_state)
+        else:
+            self.query_one(AppFooter).pagination_info = "[0/0]"
 
-    def on_key(self, event) -> None:
-        match event.key:
-            case "q" | "Q" | "ctrl+c":
-                self.exit()
-            case "tab":
-                self.switch_tab((self.current_tab + 1) % len(TABS))
-            case "shift+tab":
-                self.switch_tab((self.current_tab - 1 + len(TABS)) % len(TABS))
-            case "j" | "J" | "down":
-                self.action_focus_next()
-            case "k" | "K" | "up":
-                self.action_focus_previous()
-            case "ctrl+d" | "page_down":
-                self.page_jump(10)
-            case "ctrl+u" | "page_up":
-                self.page_jump(-10)
-            case "g":
-                self.focus_extreme(0)
-            case "G":
-                self.focus_extreme(-1)
-            case "l" | "L" | "right":
-                self.handle_adjust(1)
-            case "h" | "H" | "left" | "backspace":
-                self.handle_adjust(-1)
-            case "r":
-                self.handle_reset()
-            case "R":
-                self.handle_reset_all()
-            case "enter":
-                self.action_enter()
+    @on(Tabs.TabActivated)
+    def handle_tab_activated(self, event: Tabs.TabActivated) -> None:
+        idx = int(event.tab.id.split("-")[1])
+        if idx != self.current_tab_idx:
+            self.load_tab_content(idx)
 
-    def get_focused_row(self) -> ConfigRow | None:
-        focused = self.screen.focused
-        return focused if isinstance(focused, ConfigRow) else None
+    @on(ListView.Highlighted)
+    def update_pagination(self, event: ListView.Highlighted) -> None:
+        lv = event.list_view
+        idx = lv.index if lv.index is not None else 0
+        total = len(lv.children)
+        self.query_one(AppFooter).pagination_info = f"[{idx + 1}/{total}]"
 
-    def page_jump(self, offset: int) -> None:
-        rows = list(self.query(ConfigRow))
-        if not rows: return
+    def notify_status(self, msg: str) -> None:
+        self.query_one(AppFooter).status_msg = msg
+        self.set_timer(3, lambda: setattr(self.query_one(AppFooter), 'status_msg', ""))
+
+    # --- Actions mapped to bindings ---
+
+    def action_next_tab(self) -> None: self.query_one(Tabs).action_next_tab()
+    def action_prev_tab(self) -> None: self.query_one(Tabs).action_previous_tab()
+    def action_cursor_down(self) -> None: self.query_one(ListView).action_cursor_down()
+    def action_cursor_up(self) -> None: self.query_one(ListView).action_cursor_up()
+    def action_scroll_top(self) -> None: self.query_one(ListView).index = 0
+    
+    def action_scroll_bottom(self) -> None:
+        lv = self.query_one(ListView)
+        if lv.children:
+            lv.index = len(lv.children) - 1
+            
+    def action_page_down(self) -> None:
+        lv = self.query_one(ListView)
+        if not lv.children: return
+        idx = lv.index if lv.index is not None else 0
+        lv.index = min(len(lv.children) - 1, idx + 10)
         
-        focused = self.get_focused_row()
-        if not focused: return
+    def action_page_up(self) -> None:
+        lv = self.query_one(ListView)
+        if not lv.children: return
+        idx = lv.index if lv.index is not None else 0
+        lv.index = max(0, idx - 10)
+
+    def action_adjust(self, direction: int) -> None:
+        lv = self.query_one(ListView)
+        if lv.highlighted_child is None: return
         
-        current_idx = rows.index(focused)
-        new_idx = max(0, min(len(rows) - 1, current_idx + offset))
-        rows[new_idx].focus()
-
-    def focus_extreme(self, idx: int) -> None:
-        rows = list(self.query(ConfigRow))
-        if rows:
-            rows[idx].focus()
-
-    def handle_adjust(self, direction: int) -> None:
-        row = self.get_focused_row()
-        if not row: return
+        row = lv.highlighted_child
         item = row.item
         
-        if item.type_ == "bool":
-            item.value = not item.value
-        elif item.type_ == "int":
-            item.value += direction
-        elif item.type_ == "cycle":
-            try: idx = item.options.index(item.value)
-            except ValueError: idx = 0
-            item.value = item.options[(idx + direction) % len(item.options)]
-        else:
-            return
+        match item.type_:
+            case "bool":
+                item.value = not item.value
+            case "int" | "float":
+                step = item.step or 1
+                new_val = item.value + (direction * step)
+                if item.min_val is not None: new_val = max(item.min_val, new_val)
+                if item.max_val is not None: new_val = min(item.max_val, new_val)
+                item.value = round(new_val, 6) if item.type_ == "float" else new_val
+            case "cycle":
+                try: idx = item.options.index(item.value)
+                except ValueError: idx = 0
+                item.value = item.options[(idx + direction) % len(item.options)]
+            case _: return
             
         row.update_display()
         self.notify_status(f"Updated {item.label}")
 
-    def handle_reset(self) -> None:
-        row = self.get_focused_row()
-        if row:
+    def action_reset_item(self) -> None:
+        lv = self.query_one(ListView)
+        if lv.highlighted_child:
+            row = lv.highlighted_child
             row.item.value = row.item.default
             row.update_display()
             self.notify_status(f"Reset {row.item.label}")
 
-    def handle_reset_all(self) -> None:
+    def action_reset_all(self) -> None:
         for row in self.query(ConfigRow):
             row.item.value = row.item.default
             row.update_display()
-        self.notify_status("Reset all items in current tab")
+        self.notify_status(f"Reset all items in {TABS[self.current_tab_idx]}")
 
-    def action_enter(self) -> None:
-        row = self.get_focused_row()
-        if not row: return
+    def action_submit_current(self) -> None:
+        lv = self.query_one(ListView)
+        if lv and lv.highlighted_child:
+            self.handle_selection(ListView.Selected(lv, lv.highlighted_child, lv.index))
+
+    @on(ListView.Selected)
+    def handle_selection(self, event: ListView.Selected) -> None:
+        row = event.item
+        item = row.item
         
-        if row.item.type_ == "bool":
-            self.handle_adjust(1)
-        elif row.item.type_ == "string":
-            self.prompt_string(row)
-        elif row.item.type_ == "action":
-            if row.item.key == "restart":
-                self.notify_status("Simulating daemon restart...")
+        match item.type_:
+            case "bool": self.action_adjust(1)
+            case "string": self.prompt_string(row)
+            case "action":
+                if item.key == "demo_sudo":
+                    self.notify_status("Acquiring Sudo... Simulated daemon restart.")
+            case "picker": self.prompt_picker(row)
 
     @work
     async def prompt_string(self, row: ConfigRow) -> None:
@@ -451,7 +562,15 @@ class DuskyApp(App):
         if new_val is not None:
             row.item.value = new_val
             row.update_display()
-            self.notify_status(f"Updated {row.item.label}")
+            self.notify_status(f"Written: {row.item.label} = {new_val}")
+
+    @work
+    async def prompt_picker(self, row: ConfigRow) -> None:
+        new_val = await self.push_screen(PickerScreen(row.item.label, row.item.options, row.item.hints))
+        if new_val is not None:
+            row.item.value = new_val
+            row.update_display()
+            self.notify_status(f"Selected: {new_val}")
 
 if __name__ == "__main__":
     app = DuskyApp()

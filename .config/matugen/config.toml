@@ -101,8 +101,8 @@ post_hook   = '''
 
 
 [templates.dusky_tui]
-input_path  = '~/.config/matugen/templates/gtk-colors.css'
-output_path = '~/.config/matugen/generated/dusky_tui.css'
+input_path  = '~/.config/matugen/templates/dusky_tui.json'
+output_path = '~/.config/matugen/generated/dusky_tui.json'
 
 
 [templates.foot]
