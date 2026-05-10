@@ -1,4 +1,5 @@
 @-moz-document domain("discord.com") {
+    /* This theme properly works on "Dark" and "Light" theme from the appearance tab */
     :root {
         --neutral-92: var(--surface) !important;
         --neutral-87: var(--surface_container_high) !important;
